@@ -5,6 +5,8 @@ import subprocess
 import time
 import json
 import sys
+import tempfile
+import shutil
 
 results_received = None
 done_event = threading.Event()
@@ -31,23 +33,32 @@ t = threading.Thread(target=httpd.serve_forever, daemon=True)
 t.start()
 
 chrome_path = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+user_data_dir = tempfile.mkdtemp(prefix='rm_test_unit_')
 chrome_proc = subprocess.Popen([
     chrome_path,
     '--headless=new',
     '--disable-gpu',
+    f'--user-data-dir={user_data_dir}',
     f'http://127.0.0.1:{PORT}/tests/test_runner.html'
 ])
 
-done = done_event.wait(timeout=10)
+done = done_event.wait(timeout=30)
 chrome_proc.terminate()
+try:
+    chrome_proc.wait(timeout=5)
+except Exception:
+    chrome_proc.kill()
 httpd.shutdown()
+shutil.rmtree(user_data_dir, ignore_errors=True)
 
 if not done or not results_received:
-    print('TIMEOUT: No test results received within 10 seconds.')
+    print('TIMEOUT: No test results received within 30 seconds.')
     sys.exit(1)
 
 print('=== BROWSER TEST RESULTS ===')
 print('Overall Status:', results_received.get('status'))
+if results_received.get('error'):
+    print('Fatal Error:', results_received.get('error'))
 for item in results_received.get('results', []):
     st = item.get('status')
     msg = item.get('msg')

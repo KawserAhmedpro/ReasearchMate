@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="ResearchMate V1.1 - A minimal, lightweight personal research paper literature review notebook with PDF upload and complete backup/restore.">
+  <meta name="description" content="ResearchMate V1.2 - Personal research paper literature review notebook with unified rich notes editor, PDF upload, vector PDF export, and complete backup/restore.">
   <title>ResearchMate — Personal Literature Review Notebook</title>
+  <link rel="stylesheet" href="css/vendor/quill.snow.css">
+  <link rel="stylesheet" href="css/vendor/katex.min.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e40af' stroke-width='2'><path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'></path><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'></path></svg>">
@@ -422,8 +424,8 @@
               </div>
             </div>
             <p class="data-mgmt-desc">
-              Exports a complete backup containing all research paper metadata, all 10 literature review note sections,
-              and all uploaded original PDF documents into a single portable ZIP archive.
+              Exports a complete backup containing all research paper metadata, all 10 rich literature review note sections
+              (formatting, tables, LaTeX math), all uploaded original PDF documents, and all embedded note images/diagrams into a single portable ZIP archive.
             </p>
           </div>
           <div>
@@ -524,7 +526,8 @@
               </div>
             </div>
             <p class="data-mgmt-desc">
-              Exports a lightweight JSON file containing all bibliographic paper information and 10-section literature review notes (no PDF files attached).
+              Exports a lightweight JSON file containing all bibliographic paper information, structured 10-section rich notes (text, tables, LaTeX source), and image metadata references.
+              <strong>Note:</strong> Binary original PDFs and embedded image files require <em>Full Backup (.ZIP)</em>.
             </p>
           </div>
           <div>
@@ -828,21 +831,160 @@
   </div>
 
   <!-- ========================================================================
+       Modal 4: Math Equation Editor Modal (KaTeX LaTeX)
+       ======================================================================== -->
+  <div id="mathEditorModal" class="modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="mathModalTitle">
+    <div class="modal-card modal-card-md">
+      <div class="modal-header">
+        <h2 id="mathModalTitle" class="modal-title">Insert Mathematical Equation (LaTeX)</h2>
+        <button type="button" class="modal-close-btn" data-action="close-modal" aria-label="Close modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="rm-math-mode-row">
+          <label class="rm-radio-pill">
+            <input type="radio" name="mathDisplayMode" value="inline" checked>
+            <span>Inline Equation ($...$)</span>
+          </label>
+          <label class="rm-radio-pill">
+            <input type="radio" name="mathDisplayMode" value="block">
+            <span>Display / Block Equation ($$...$$)</span>
+          </label>
+        </div>
+
+        <div class="rm-math-snippets" aria-label="Quick LaTeX Symbols">
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\frac{a}{b}">a/b</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\sum_{i=1}^{n}">Σ</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\int_{a}^{b}">∫</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\sqrt{x}">√x</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="x_i">xᵢ</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="x^2">x²</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\alpha">\alpha</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\beta">\beta</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\theta">\theta</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\lambda">\lambda</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\leq">≤</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\geq">≥</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\neq">≠</button>
+          <button type="button" class="rm-snippet-btn" data-latex-snippet="\approx">≈</button>
+        </div>
+
+        <label for="mathLatexInput" class="form-label">LaTeX Source</label>
+        <textarea id="mathLatexInput" class="form-input rm-math-input" rows="3" placeholder="e.g. \mathcal{L}(\theta) = -\sum_{i=1}^{N} y_i \log(\hat{y}_i)"></textarea>
+
+        <div style="margin-top: 0.75rem;">
+          <div class="form-label" style="margin-bottom: 0.35rem;">Live Rendered Preview</div>
+          <div id="mathLivePreview" class="rm-math-live-preview">
+            <span style="color: var(--text-muted); font-size: 0.8125rem;">Type a LaTeX expression above to preview rendered equation...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="applyMathBtn">Insert Equation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 5: Insert Comparison Table Modal
+       ======================================================================== -->
+  <div id="insertTableModal" class="modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="tableModalTitle">
+    <div class="modal-card modal-card-sm">
+      <div class="modal-header">
+        <h2 id="tableModalTitle" class="modal-title">Insert Comparison Table</h2>
+        <button type="button" class="modal-close-btn" data-action="close-modal" aria-label="Close modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="rm-table-size-grid">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="tableRowsInput" class="form-label">Rows (1–20)</label>
+            <input type="number" id="tableRowsInput" class="form-input" value="3" min="1" max="20">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="tableColsInput" class="form-label">Columns (1–10)</label>
+            <input type="number" id="tableColsInput" class="form-input" value="3" min="1" max="10">
+          </div>
+        </div>
+
+        <label class="rm-checkbox-row" style="margin-top: 0.9rem;">
+          <input type="checkbox" id="tableHeaderToggle" checked>
+          <span>Include styled header row</span>
+        </label>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="applyTableInsertBtn">Insert Table</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 6: Image Caption & Source Metadata Modal
+       ======================================================================== -->
+  <div id="imageMetaModal" class="modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="imageMetaModalTitle">
+    <div class="modal-card modal-card-sm">
+      <div class="modal-header">
+        <h2 id="imageMetaModalTitle" class="modal-title">Figure Caption &amp; Source</h2>
+        <button type="button" class="modal-close-btn" data-action="close-modal" aria-label="Close modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="imageCaptionInput" class="form-label">Figure Caption (Optional)</label>
+          <input type="text" id="imageCaptionInput" class="form-input" placeholder="e.g. Fig. 1: Overall transformer encoder-decoder pipeline">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="imageSourceInput" class="form-label">Source / Reference (Optional)</label>
+          <input type="text" id="imageSourceInput" class="form-input" placeholder="e.g. Vaswani et al. (2017), Section 3.1">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="applyImageMetaBtn">Save Caption</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
        Toast Notification Feedback
        ======================================================================== -->
   <div id="toastContainer" class="toast-container" role="status" aria-live="polite"></div>
 
   <!-- ========================================================================
-       Vendor Scripts (Local first with offline resilience)
+       Vendor Scripts (Local first — 100% offline & GitHub Pages ready)
        ======================================================================== -->
   <script src="js/vendor/jszip.min.js"></script>
-  <script src="js/vendor/jspdf.umd.min.js"></script>
-  <script src="js/vendor/html2pdf.bundle.min.js"></script>
+  <script src="js/vendor/quill.js"></script>
+  <script src="js/vendor/katex.min.js"></script>
+  <script src="js/vendor/katex-svg-style.js"></script>
+  <script src="js/vendor/pdfmake.min.js"></script>
+  <script src="js/vendor/pdf-fonts.js"></script>
 
   <!-- ========================================================================
        Application Modules
        ======================================================================== -->
   <script src="js/database.js"></script>
+  <script src="js/rich-editor.js"></script>
   <script src="js/pdf-export.js"></script>
   <script src="js/papers.js"></script>
   <script src="js/notes.js"></script>

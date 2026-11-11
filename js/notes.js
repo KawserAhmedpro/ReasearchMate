@@ -1,20 +1,28 @@
 /**
- * notes.js - Literature Review Note-Taking System for ResearchMate
- * Handles the 10 core research analysis sections, auto-resizing textareas,
- * unsaved changes detection, saving to IndexedDB, reading view, and PDF trigger.
+ * notes.js - Literature Review Note-Taking System for ResearchMate (V1.2)
+ * Manages the 10 immutable research analysis sections using unified rich-content
+ * editors (RichEditorManager), debounced IndexedDB autosave with save states,
+ * safe navigation/upload awaiting, formatted read-only preview, and PDF export trigger.
  */
 
 (function () {
   'use strict';
 
+  const AUTOSAVE_DELAY_MS = 1200;
+
   let currentPaperId = null;
   let currentPaper = null;
   let currentNotes = null;
-  let originalFormValues = {};
+  let originalSerializedSections = {};
+  let sectionEditors = {}; // sectionId -> editor handle from RichEditorManager
   let hasUnsavedChanges = false;
   let isViewMode = false; // true = read-only preview; false = note editor
 
-  const SECTIONS = window.PDFExporter ? window.PDFExporter.SECTIONS : [
+  let autosaveTimer = null;
+  let saveInFlightPromise = null;
+  let resaveNeeded = false;
+
+  const SECTIONS = (window.PDFExporter && window.PDFExporter.SECTIONS) ? window.PDFExporter.SECTIONS : [
     { id: 'researchProblem', num: '01', title: 'Research Problem', guiding: 'What problem are the researchers trying to solve?' },
     { id: 'researchObjective', num: '02', title: 'Research Objective', guiding: 'What is the main objective or goal of this research?' },
     { id: 'dataset', num: '03', title: 'Dataset', guiding: 'Dataset name, size, source, characteristics, and important data notes.' },
@@ -32,26 +40,29 @@
   }
 
   function setupEventListeners() {
-    // Save Notes button
+    // Save Notes button (manual immediate save)
     const saveBtn = document.getElementById('saveNotesBtn');
     if (saveBtn) {
-      saveBtn.addEventListener('click', handleSaveNotes);
+      saveBtn.addEventListener('click', () => handleSaveNotes({ silent: false }));
     }
 
-    // Download PDF from Notes View
+    // Download PDF from Notes View — flush any pending edits/uploads first
     const pdfBtn = document.getElementById('notesDownloadPdfBtn');
     if (pdfBtn) {
-      pdfBtn.addEventListener('click', () => {
-        if (currentPaperId && currentPaper) {
-          window.PapersManager.triggerPdfDownload(currentPaperId, pdfBtn);
-        }
+      pdfBtn.addEventListener('click', async () => {
+        if (!currentPaperId || !currentPaper) return;
+        await flushSave();
+        window.PapersManager.triggerPdfDownload(currentPaperId, pdfBtn);
       });
     }
 
     // Toggle view/edit mode
     const toggleModeBtn = document.getElementById('toggleNotesModeBtn');
     if (toggleModeBtn) {
-      toggleModeBtn.addEventListener('click', () => {
+      toggleModeBtn.addEventListener('click', async () => {
+        if (!isViewMode) {
+          await flushSave();
+        }
         setMode(!isViewMode);
       });
     }
@@ -65,37 +76,82 @@
       });
     }
 
-    // Keyboard shortcut: Ctrl+S / Cmd+S to save
+    // Keyboard shortcut: Ctrl+S / Cmd+S to save immediately
     window.addEventListener('keydown', e => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         const notesSection = document.getElementById('notesSection');
         if (notesSection && notesSection.classList.contains('active-view')) {
           e.preventDefault();
-          handleSaveNotes();
+          handleSaveNotes({ silent: false });
         }
       }
     });
 
-    // Browser close / reload safety warning
+    // Browser close / reload safety + Blob URL cleanup
     window.addEventListener('beforeunload', e => {
-      if (hasUnsavedChanges) {
+      const pendingUploads = window.RichEditorManager ? window.RichEditorManager.getPendingUploadCount() : 0;
+      if (hasUnsavedChanges || saveInFlightPromise || pendingUploads > 0) {
         e.preventDefault();
-        e.returnValue = 'You have unsaved literature review notes. Are you sure you want to leave?';
+        e.returnValue = 'You have unsaved literature review notes or pending uploads. Are you sure you want to leave?';
         return e.returnValue;
+      }
+      if (window.RichEditorManager) {
+        window.RichEditorManager.revokeAllBlobUrls();
       }
     });
   }
 
   /**
-   * Prompts user before leaving if unsaved changes exist.
+   * Flushes any debounced autosave or pending image upload immediately before navigating/exporting.
    */
-  function attemptNavigation(targetView) {
-    if (hasUnsavedChanges) {
-      const confirmLeave = window.confirm('You have unsaved note changes. Do you want to discard your changes and leave?');
-      if (!confirmLeave) return false;
-      hasUnsavedChanges = false;
+  async function flushSave() {
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
     }
-    window.App.navigateTo(targetView);
+    if (window.RichEditorManager) {
+      await window.RichEditorManager.waitForPendingUploads();
+    }
+    if (saveInFlightPromise) {
+      await saveInFlightPromise;
+    }
+    if (currentPaperId && (hasUnsavedChanges || resaveNeeded)) {
+      return await handleSaveNotes({ silent: true });
+    }
+    return true;
+  }
+
+  /**
+   * Attempts safe navigation away from the notes workspace.
+   */
+  async function attemptNavigation(targetView) {
+    if (!currentPaperId) {
+      window.App.navigateTo(targetView);
+      return true;
+    }
+
+    const savedPaperId = currentPaperId;
+    if (hasUnsavedChanges || autosaveTimer || saveInFlightPromise || (window.RichEditorManager && window.RichEditorManager.getPendingUploadCount() > 0)) {
+      const ok = await flushSave();
+      if (!ok && hasUnsavedChanges) {
+        const confirmLeave = window.confirm('Latest changes could not be saved automatically. Do you want to discard unsaved changes and leave?');
+        if (!confirmLeave) return false;
+        hasUnsavedChanges = false;
+      }
+    }
+
+    // Safe post-navigation orphan image cleanup once session ends (keeps Undo/Redo working during session)
+    if (window.ResearchMateDB && typeof window.ResearchMateDB.cleanupOrphanedImagesForPaper === 'function') {
+      window.ResearchMateDB.cleanupOrphanedImagesForPaper(savedPaperId).catch(() => {});
+    }
+    if (window.RichEditorManager) {
+      window.RichEditorManager.revokeAllBlobUrls();
+      window.RichEditorManager.clearSectionEditors();
+    }
+    sectionEditors = {};
+    currentPaperId = null;
+
+    window.App.navigateTo(targetView, { skipUnsavedCheck: true });
     return true;
   }
 
@@ -103,10 +159,13 @@
    * Opens Note Editor for a given paper.
    */
   async function openNoteEditor(paperId) {
-    if (hasUnsavedChanges && currentPaperId !== paperId) {
-      const confirmSwitch = window.confirm('You have unsaved changes in your current note. Discard changes and open this paper?');
-      if (!confirmSwitch) return;
-      hasUnsavedChanges = false;
+    if (currentPaperId && currentPaperId !== paperId) {
+      await flushSave();
+      if (hasUnsavedChanges) {
+        const confirmSwitch = window.confirm('Latest changes could not be saved. Discard changes and open this paper?');
+        if (!confirmSwitch) return;
+        hasUnsavedChanges = false;
+      }
     }
 
     isViewMode = false;
@@ -119,10 +178,13 @@
    * Opens Read-only Preview for a given paper.
    */
   async function openNoteView(paperId) {
-    if (hasUnsavedChanges && currentPaperId !== paperId) {
-      const confirmSwitch = window.confirm('You have unsaved changes in your current note. Discard changes and view this paper?');
-      if (!confirmSwitch) return;
-      hasUnsavedChanges = false;
+    if (currentPaperId && currentPaperId !== paperId) {
+      await flushSave();
+      if (hasUnsavedChanges) {
+        const confirmSwitch = window.confirm('Latest changes could not be saved. Discard changes and view this paper?');
+        if (!confirmSwitch) return;
+        hasUnsavedChanges = false;
+      }
     }
 
     isViewMode = true;
@@ -132,10 +194,20 @@
   }
 
   /**
-   * Loads paper and note records from DB and populates UI.
+   * Loads paper and note records from DB and populates rich editors & preview.
    */
   async function loadAndDisplayPaperNotes(paperId) {
     try {
+      if (autosaveTimer) {
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+      }
+      if (window.RichEditorManager) {
+        window.RichEditorManager.revokeAllBlobUrls();
+        window.RichEditorManager.clearSectionEditors();
+      }
+      sectionEditors = {};
+
       currentPaperId = paperId;
       const [paper, notes] = await Promise.all([
         window.ResearchMateDB.getPaperById(paperId),
@@ -149,23 +221,22 @@
       }
 
       currentPaper = paper;
-      currentNotes = notes || {};
+      currentNotes = notes ? window.ResearchMateDB.normalizeNoteRecord(notes) : {};
 
       // 1. Render Fixed Paper Information Card
       renderPaperInfoCard(paper);
 
-      // 2. Populate 10 Notes Textareas & Section Jump TOC
+      // 2. Mount 10 Rich Content Section Editors & Section Jump TOC
       renderNoteSections(currentNotes);
 
-      // 3. Render Read-Only View Elements
+      // 3. Render Read-Only Preview View
       renderReadOnlyView(paper, currentNotes);
 
       // 4. Reset Unsaved State Tracking
       recordOriginalValues();
-      updateSaveStatus(false, currentNotes.updatedAt);
+      updateSaveStatus('saved', currentNotes.updatedAt);
       updateCompletionBadge();
 
-      // Scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error('Failed to load paper notes:', err);
@@ -188,6 +259,9 @@
     if (authorsEl) authorsEl.textContent = paper.authors;
     if (yearEl) {
       yearEl.textContent = paper.year ? `Year: ${paper.year}` : 'Year: Not specified';
+    }
+    if (createdEl && paper.createdAt) {
+      createdEl.textContent = `Added ${new Date(paper.createdAt).toLocaleDateString()}`;
     }
 
     if (doiWrap && doiLink) {
@@ -219,7 +293,7 @@
   }
 
   /**
-   * Renders the 10 note input sections and table of contents pills.
+   * Renders the 10 unified rich-content section cards and table of contents pills.
    */
   function renderNoteSections(notes) {
     const container = document.getElementById('notesEditorSectionsContainer');
@@ -243,20 +317,22 @@
           const targetEl = document.getElementById(targetId);
           if (targetEl) {
             targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            const textarea = targetEl.querySelector('textarea');
-            if (textarea) textarea.focus();
+            const secId = targetId.replace(/^section-/, '');
+            if (sectionEditors[secId]) {
+              sectionEditors[secId].focus();
+            }
           }
         });
       });
     }
 
-    // Render 10 Sections
+    // Build 10 Section Containers cleanly without rebuilding per keystroke
     container.innerHTML = SECTIONS.map(sec => {
-      const val = notes[sec.id] || '';
+      const val = notes[sec.id];
       const wordCount = countWords(val);
 
       return `
-        <div class="note-section-card" id="section-${sec.id}">
+        <div class="note-section-card" id="section-${sec.id}" data-section-id="${sec.id}">
           <div class="note-section-header">
             <div class="note-section-title-wrap">
               <span class="note-section-badge">${sec.num}</span>
@@ -268,95 +344,143 @@
             <span class="note-word-count" id="wc-${sec.id}">${wordCount} word${wordCount === 1 ? '' : 's'}</span>
           </div>
 
-          <div class="note-textarea-wrapper">
-            <textarea
-              class="note-textarea"
-              id="input-${sec.id}"
-              data-section-id="${sec.id}"
-              placeholder="Record your literature review notes for ${escapeHtml(sec.title)} here..."
-              rows="4"
-              spellcheck="true"
-            >${escapeHtml(val)}</textarea>
-          </div>
+          <div class="note-rich-editor-host" id="rich-host-${sec.id}" data-section-id="${sec.id}"></div>
         </div>
       `;
     }).join('');
 
-    // Attach input event listeners for auto-resize and unsaved detection
-    container.querySelectorAll('.note-textarea').forEach(textarea => {
-      autoResizeTextarea(textarea);
+    // Initialize independent unified rich editors inside each section host
+    sectionEditors = {};
+    SECTIONS.forEach(sec => {
+      const hostEl = document.getElementById(`rich-host-${sec.id}`);
+      if (!hostEl || !window.RichEditorManager) return;
 
-      textarea.addEventListener('input', () => {
-        autoResizeTextarea(textarea);
-        const secId = textarea.getAttribute('data-section-id');
-        const wcEl = document.getElementById(`wc-${secId}`);
-        if (wcEl) {
-          const wc = countWords(textarea.value);
-          wcEl.textContent = `${wc} word${wc === 1 ? '' : 's'}`;
-        }
-        checkUnsavedChanges();
-        updateCompletionBadge();
+      const editorHandle = window.RichEditorManager.createSectionEditor({
+        sectionId: sec.id,
+        paperId: currentPaperId,
+        getPaperId: () => currentPaperId,
+        hostEl,
+        initialContent: notes[sec.id],
+        placeholder: `Write structured notes, paste diagrams, add tables or equations for ${sec.title}...`,
+        onChange: () => handleSectionEdited(sec.id)
       });
+
+      sectionEditors[sec.id] = editorHandle;
     });
   }
 
-  /**
-   * Automatically expands textarea to fit content without internal scrollbars.
-   */
-  function autoResizeTextarea(el) {
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.max(el.scrollHeight, 110) + 'px';
+  function handleSectionEdited(secId) {
+    const editor = sectionEditors[secId];
+    if (editor) {
+      const wcEl = document.getElementById(`wc-${secId}`);
+      if (wcEl) {
+        const wc = countWords(editor.getContent());
+        wcEl.textContent = `${wc} word${wc === 1 ? '' : 's'}`;
+      }
+    }
+    checkUnsavedChanges();
+    updateCompletionBadge();
+    scheduleAutosave();
+  }
+
+  function scheduleAutosave() {
+    if (!currentPaperId) return;
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+    }
+    if (saveInFlightPromise) {
+      resaveNeeded = true;
+    }
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
+      handleSaveNotes({ silent: true });
+    }, AUTOSAVE_DELAY_MS);
   }
 
   /**
-   * Helper to count words in string.
+   * Helper to count words in a plain-text or structured section object.
    */
-  function countWords(str) {
-    if (!str || !str.trim()) return 0;
-    return str.trim().split(/\s+/).length;
+  function countWords(sectionVal) {
+    const text = window.ResearchMateDB && typeof window.ResearchMateDB.extractSectionPlainText === 'function'
+      ? window.ResearchMateDB.extractSectionPlainText(sectionVal)
+      : String(sectionVal || '');
+    if (!text || !text.trim()) return 0;
+    return text.trim().split(/\s+/).length;
+  }
+
+  function collectAllSectionsData() {
+    const data = {};
+    SECTIONS.forEach(sec => {
+      const editor = sectionEditors[sec.id];
+      data[sec.id] = editor
+        ? editor.getContent()
+        : (currentNotes && currentNotes[sec.id] ? currentNotes[sec.id] : window.ResearchMateDB.normalizeSectionContent(''));
+    });
+    return data;
   }
 
   /**
-   * Records initial values of textareas to track edits.
+   * Records initial serialized section snapshots to track edits accurately.
    */
   function recordOriginalValues() {
-    originalFormValues = {};
+    originalSerializedSections = {};
     SECTIONS.forEach(sec => {
-      const el = document.getElementById(`input-${sec.id}`);
-      originalFormValues[sec.id] = el ? el.value : '';
+      const editor = sectionEditors[sec.id];
+      const content = editor
+        ? editor.getContent()
+        : window.ResearchMateDB.normalizeSectionContent(currentNotes ? currentNotes[sec.id] : '');
+      originalSerializedSections[sec.id] = JSON.stringify(content);
     });
     hasUnsavedChanges = false;
   }
 
   /**
-   * Checks if current form content differs from saved record.
+   * Checks if current rich editor content differs from saved record.
    */
   function checkUnsavedChanges() {
     let changed = false;
     for (const sec of SECTIONS) {
-      const el = document.getElementById(`input-${sec.id}`);
-      const currentVal = el ? el.value : '';
-      if (currentVal !== (originalFormValues[sec.id] || '')) {
+      const editor = sectionEditors[sec.id];
+      if (!editor) continue;
+      const curJson = JSON.stringify(editor.getContent());
+      if (curJson !== (originalSerializedSections[sec.id] || '')) {
         changed = true;
         break;
       }
     }
     hasUnsavedChanges = changed;
-    updateSaveStatus(changed);
+    if (changed) {
+      updateSaveStatus('unsaved');
+    }
   }
 
   /**
-   * Updates save button state and status indicator.
+   * Updates save button and sticky status indicator ('saving' | 'saved' | 'unsaved' | 'error').
    */
-  function updateSaveStatus(isUnsaved, timestamp) {
+  function updateSaveStatus(state, timestamp) {
     const statusDot = document.getElementById('notesSaveStatusDot');
     const statusText = document.getElementById('notesSaveStatusText');
     const saveBtn = document.getElementById('saveNotesBtn');
 
-    if (isUnsaved) {
+    if (state === 'saving') {
+      if (statusDot) statusDot.className = 'status-dot dot-saving';
+      if (statusText) statusText.textContent = 'Saving...';
+      return;
+    }
+
+    if (state === 'error') {
+      if (statusDot) statusDot.className = 'status-dot dot-error';
+      if (statusText) statusText.textContent = 'Save failed — press Ctrl+S to retry';
+      if (saveBtn) {
+        saveBtn.classList.remove('btn-secondary');
+        saveBtn.classList.add('btn-primary');
+      }
+      return;
+    }
+
+    if (state === 'unsaved') {
       if (statusDot) statusDot.className = 'status-dot dot-unsaved';
-      if (statusText) statusText.textContent = 'Unsaved changes';
+      if (statusText) statusText.textContent = 'Unsaved changes (autosaving...)';
       if (saveBtn) {
         saveBtn.classList.remove('btn-secondary');
         saveBtn.classList.add('btn-primary');
@@ -364,7 +488,7 @@
     } else {
       if (statusDot) statusDot.className = 'status-dot dot-saved';
       const timeStr = timestamp ? formatTime(timestamp) : 'Saved';
-      if (statusText) statusText.textContent = `All changes saved (${timeStr})`;
+      if (statusText) statusText.textContent = `Saved (${timeStr})`;
       if (saveBtn) {
         saveBtn.classList.remove('btn-primary');
         saveBtn.classList.add('btn-secondary');
@@ -383,7 +507,7 @@
   function formatTime(isoString) {
     try {
       const d = new Date(isoString);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     } catch {
       return 'Saved';
     }
@@ -398,8 +522,9 @@
 
     let completed = 0;
     SECTIONS.forEach(sec => {
-      const el = document.getElementById(`input-${sec.id}`);
-      if (el && el.value.trim().length > 0) {
+      const editor = sectionEditors[sec.id];
+      const secVal = editor ? editor.getContent() : (currentNotes && currentNotes[sec.id]);
+      if (window.ResearchMateDB && window.ResearchMateDB.isSectionNonEmpty(secVal)) {
         completed++;
       }
     });
@@ -415,57 +540,94 @@
   }
 
   /**
-   * Saves notes to IndexedDB.
+   * Saves all 10 rich-content sections safely to IndexedDB.
+   * Waits for any in-progress image Blob writes and coalesces overlapping saves.
    */
-  async function handleSaveNotes() {
-    if (!currentPaperId) return;
+  async function handleSaveNotes(options = {}) {
+    const silent = Boolean(options && options.silent);
+    if (!currentPaperId) return false;
+
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    }
+
+    if (saveInFlightPromise) {
+      resaveNeeded = true;
+      return await saveInFlightPromise;
+    }
 
     const saveBtn = document.getElementById('saveNotesBtn');
-    const originalText = saveBtn ? saveBtn.innerHTML : 'Save Notes';
+    const originalBtnHtml = saveBtn ? saveBtn.innerHTML : 'Save Notes';
 
-    try {
-      if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = `
-          <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
-          Saving...
-        `;
+    const performSave = async () => {
+      try {
+        updateSaveStatus('saving');
+        if (!silent && saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = `
+            <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+            Saving...
+          `;
+        }
+
+        // Wait for any asynchronous image uploads before persisting imageId references
+        if (window.RichEditorManager) {
+          await window.RichEditorManager.waitForPendingUploads();
+        }
+
+        const collected = collectAllSectionsData();
+        const notesData = {
+          paperId: currentPaperId,
+          createdAt: currentNotes ? currentNotes.createdAt : undefined,
+          ...collected
+        };
+
+        const updated = await window.ResearchMateDB.saveNotes(notesData);
+        currentNotes = updated;
+
+        recordOriginalValues();
+        updateSaveStatus('saved', updated.updatedAt);
+        if (isViewMode) {
+          renderReadOnlyView(currentPaper, updated);
+        }
+
+        if (!silent) {
+          window.App.showToast('Notes saved successfully!', 'success');
+        }
+
+        // Refresh library & dashboard progress counts cleanly
+        if (window.PapersManager) await window.PapersManager.loadPapers();
+        if (window.App) await window.App.updateDashboard();
+        return true;
+      } catch (err) {
+        console.error('Failed to save notes:', err);
+        updateSaveStatus('error');
+        if (!silent && window.App) {
+          window.App.showToast(err.message || 'Failed to save notes. Please try again.', 'error');
+        }
+        return false;
+      } finally {
+        if (!silent && saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = originalBtnHtml;
+        }
       }
+    };
 
-      const notesData = {
-        paperId: currentPaperId
-      };
+    saveInFlightPromise = performSave();
+    const ok = await saveInFlightPromise;
+    saveInFlightPromise = null;
 
-      SECTIONS.forEach(sec => {
-        const el = document.getElementById(`input-${sec.id}`);
-        notesData[sec.id] = el ? el.value : '';
-      });
-
-      const updated = await window.ResearchMateDB.saveNotes(notesData);
-      currentNotes = updated;
-
-      recordOriginalValues();
-      updateSaveStatus(false, updated.updatedAt);
-      renderReadOnlyView(currentPaper, updated);
-
-      window.App.showToast('Notes saved successfully!', 'success');
-
-      // Refresh paper completion counts in background
-      await window.PapersManager.loadPapers();
-      await window.App.updateDashboard();
-    } catch (err) {
-      console.error('Failed to save notes:', err);
-      window.App.showToast('Failed to save notes. Please try again.', 'error');
-    } finally {
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = originalText;
-      }
+    if (resaveNeeded) {
+      resaveNeeded = false;
+      return await handleSaveNotes({ silent: true });
     }
+    return ok;
   }
 
   /**
-   * Sets mode: Edit vs Read-Only View.
+   * Sets mode: Edit vs Read-Only Preview.
    */
   function setMode(viewModeActive) {
     isViewMode = viewModeActive;
@@ -492,7 +654,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
           Edit Notes
         `;
-        toggleBtn.title = 'Switch to Note Editor';
+        toggleBtn.title = 'Switch to Rich Note Editor';
       }
     } else {
       if (editorWrap) editorWrap.style.display = 'block';
@@ -503,15 +665,13 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
           Preview Notes
         `;
-        toggleBtn.title = 'Switch to Read-Only Preview';
+        toggleBtn.title = 'Switch to Formatted Preview';
       }
-      // Re-trigger auto-heights for all textareas
-      document.querySelectorAll('.note-textarea').forEach(autoResizeTextarea);
     }
   }
 
   /**
-   * Renders the formatted academic read-only view.
+   * Renders the formatted academic read-only view (rich text, images, tables, rendered KaTeX math).
    */
   function renderReadOnlyView(paper, notes) {
     const container = document.getElementById('notesReadOnlyContent');
@@ -519,8 +679,11 @@
 
     let html = '';
     SECTIONS.forEach(sec => {
-      const text = (notes[sec.id] || '').trim();
-      const hasContent = text.length > 0;
+      const secVal = notes ? notes[sec.id] : null;
+      const hasContent = window.ResearchMateDB && window.ResearchMateDB.isSectionNonEmpty(secVal);
+      const renderedHtml = hasContent && window.RichEditorManager
+        ? window.RichEditorManager.renderSectionDeltaToHtml(secVal)
+        : '';
 
       html += `
         <div class="readonly-section-card ${hasContent ? 'has-notes' : 'empty-notes'}">
@@ -533,8 +696,8 @@
           </div>
           <div class="readonly-section-body">
             ${
-              hasContent
-                ? formatParagraphs(text)
+              hasContent && renderedHtml
+                ? renderedHtml
                 : '<p class="readonly-empty-text"><em>No notes recorded for this section.</em></p>'
             }
           </div>
@@ -543,14 +706,11 @@
     });
 
     container.innerHTML = html;
-  }
 
-  function formatParagraphs(text) {
-    const escaped = escapeHtml(text);
-    return escaped
-      .split(/\n\s*\n/)
-      .map(p => `<p class="formatted-p">${p.replace(/\n/g, '<br>')}</p>`)
-      .join('');
+    // Resolve embedded IndexedDB image references in Preview Mode
+    if (window.RichEditorManager) {
+      window.RichEditorManager.hydratePreviewImages(container);
+    }
   }
 
   function escapeHtml(str) {
@@ -569,11 +729,13 @@
     openNoteEditor,
     openNoteView,
     handleSaveNotes,
+    flushSave,
     attemptNavigation,
+    setMode,
     hasUnsavedChanges: () => hasUnsavedChanges,
     getCurrentPaperId: () => currentPaperId,
     getCurrentPaper: () => currentPaper,
-    getCurrentNotes: () => currentNotes
+    getCurrentNotes: () => currentNotes,
+    getSectionEditor: (secId) => sectionEditors[secId] || null
   };
 })();
-

@@ -1,98 +1,254 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>PDF Export Test</title>
-  <script src="../js/vendor/jspdf.umd.min.js"></script>
-  <script src="../js/vendor/html2pdf.bundle.min.js"></script>
+  <title>ResearchMate V1.2 — PDF Export Verification</title>
+  <link rel="stylesheet" href="../css/vendor/katex.min.css">
+  <script src="../js/vendor/jszip.min.js"></script>
+  <script src="../js/vendor/quill.js"></script>
+  <script src="../js/vendor/katex.min.js"></script>
+  <script src="../js/vendor/katex-svg-style.js"></script>
+  <script src="../js/vendor/pdfmake.min.js"></script>
+  <script src="../js/vendor/pdf-fonts.js"></script>
   <script src="../js/database.js"></script>
+  <script src="../js/rich-editor.js"></script>
   <script src="../js/pdf-export.js"></script>
 </head>
 <body>
-  <h1>PDF Export Test</h1>
-  <div id="status">Testing PDF Generation...</div>
+  <h1>ResearchMate V1.2 — Professional PDF Export Test</h1>
+  <div id="status">Generating multi-page V1.2 PDF...</div>
 
   <script>
-    async function testPdf() {
+    async function createDiagramBlob(mimeType, width, height, titleText, accentColor) {
+      const c = document.createElement('canvas');
+      c.width = width;
+      c.height = height;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(4, 4, width - 8, height - 8);
+
+      // Draw a mock academic architecture diagram
+      ctx.fillStyle = accentColor;
+      ctx.fillRect(28, 36, 130, 56);
+      ctx.fillRect(198, 36, 130, 56);
+      ctx.fillRect(368, 36, 130, 56);
+
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(158, 64); ctx.lineTo(198, 64);
+      ctx.moveTo(328, 64); ctx.lineTo(368, 64);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('Encoder', 62, 69);
+      ctx.fillText('Attention', 230, 69);
+      ctx.fillText('Decoder', 402, 69);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '13px sans-serif';
+      ctx.fillText(titleText, 28, height - 20);
+
+      return new Promise(res => c.toBlob(res, mimeType, 0.92));
+    }
+
+    async function runPdfVerification() {
+      const statusEl = document.getElementById('status');
       try {
-        const paper = {
-          id: 'test_paper_1',
-          title: 'Attention Is All You Need (ট্রান্সফরমার আর্কিটেকচার)',
-          authors: 'Vaswani et al.',
+        await window.ResearchMateDB.initDB();
+
+        const paper = await window.ResearchMateDB.addPaper({
+          title: 'Attention Is All You Need — বাংলা গবেষণা নোট (V1.2)',
+          authors: 'Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit et al.',
           year: 2017,
-          doiUrl: 'https://arxiv.org/abs/1706.03762',
-          createdAt: new Date().toISOString()
-        };
+          doiUrl: 'https://arxiv.org/abs/1706.03762'
+        });
 
-        const notes = {
-          paperId: 'test_paper_1',
-          researchProblem: 'Recurrent networks are sequential. এটি সমান্তরাল প্রক্রিয়াকরণে বাধা সৃষ্টি করে।',
-          researchObjective: 'Design attention-only architecture.',
-          dataset: 'WMT 2014 En-De',
-          methodology: 'Multi-Head Attention mechanism',
-          evaluationProtocol: 'Standard BLEU benchmark',
-          evaluationMetrics: 'BLEU score 28.4',
-          keyFindings: 'Better BLEU and 10x faster training',
-          limitations: 'O(n^2) sequence length memory complexity',
-          futureWork: 'Apply to images and vision',
-          criticalAnalysis: 'Very strong foundational paper for NLP and LLMs.',
-          updatedAt: new Date().toISOString()
-        };
+        const pngBlob = await createDiagramBlob('image/png', 520, 140, 'Figure A: Transformer Pipeline (PNG)', '#1d4ed8');
+        const webpBlob = await createDiagramBlob('image/webp', 520, 140, 'Figure B: Attention Heatmap Diagram (WEBP -> PNG)', '#0f766e');
 
-        const filename = `ResearchMate_${window.PDFExporter.sanitizeFilename(paper.title)}.pdf`;
+        const savedPng = await window.ResearchMateDB.saveNoteImage(paper.id, 'methodology', pngBlob, {
+          fileName: 'transformer_arch.png',
+          fileType: 'image/png',
+          width: 520,
+          height: 140
+        });
+        const savedWebp = await window.ResearchMateDB.saveNoteImage(paper.id, 'evaluationProtocol', webpBlob, {
+          fileName: 'ablation_plot.webp',
+          fileType: 'image/webp',
+          width: 520,
+          height: 140
+        });
 
-        // Render PDF directly using html2pdf output blob
-        const opt = {
-          margin: [12, 12, 14, 12],
-          filename: filename,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 1.5, useCORS: true, logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-
-        // Create the node
-        const node = document.createElement('div');
-        node.innerHTML = `
-          <div style="font-family: sans-serif; padding: 20px;">
-            <h1>${paper.title}</h1>
-            <p><strong>Authors:</strong> ${paper.authors}</p>
-            <p><strong>Year:</strong> ${paper.year}</p>
-            <hr>
-            <h3>01. Research Problem</h3>
-            <p>${notes.researchProblem}</p>
-          </div>
-        `;
-        document.body.appendChild(node);
-
-        const pdfBlob = await window.html2pdf().set(opt).from(node).output('blob');
-        document.body.removeChild(node);
-
-        if (!pdfBlob || pdfBlob.size < 500) {
-          throw new Error('PDF Blob generation failed or size too small: ' + (pdfBlob ? pdfBlob.size : 0));
+        const largeComparisonRows = [
+          ['Model Variant (মডেল)', 'EN-DE BLEU', 'Training Cost (FLOPs)', 'Key Notes / পর্যবেক্ষণ']
+        ];
+        for (let i = 1; i <= 28; i++) {
+          largeComparisonRows.push([
+            `Experiment Row <b>#${i}</b>`,
+            `${(25.0 + i * 0.14).toFixed(2)}`,
+            `<code>${(i * 1.1).toFixed(1)}e19</code>`,
+            `Evaluation entry #${i} — বাংলা ও ইংরেজি মিশ্র বিশ্লেষণ ও যুক্তাক্ষর (প্রক্রিয়াকরণ, বিজ্ঞান)।`
+          ]);
         }
 
-        // Read header to verify %PDF signature
-        const arrayBuffer = await pdfBlob.slice(0, 5).arrayBuffer();
-        const header = new TextDecoder().decode(arrayBuffer);
+        const notes = await window.ResearchMateDB.saveNotes({
+          paperId: paper.id,
+          researchProblem: {
+            format: 'quill-delta-v1',
+            delta: {
+              ops: [
+                { insert: 'Sequential Recurrence Bottleneck' },
+                { insert: '\n', attributes: { header: 1 } },
+                { insert: 'Standard RNN/LSTM models prevent parallelization within training examples because hidden state ' },
+                { insert: 'h_t', attributes: { code: true } },
+                { insert: ' depends sequentially on ' },
+                { insert: 'h_{t-1}', attributes: { code: true } },
+                { insert: '. গবেষণা সমস্যা: যুক্তাক্ষর যেমন ক্ষ, জ্ঞ, ত্ত, ন্ত, র্ষ, স্ত্র এবং বিজ্ঞান। ' },
+                { insert: 'Bold highlighted point', attributes: { bold: true } },
+                { insert: ' and ' },
+                { insert: 'italic emphasis', attributes: { italic: true } },
+                { insert: '.\n' },
+                { insert: 'Key observation quote: Attention draws global dependencies regardless of distance.', attributes: { blockquote: true } },
+                { insert: '\n', attributes: { blockquote: true } },
+                { insert: 'Read original paper: ' },
+                { insert: 'arXiv:1706.03762', attributes: { link: 'https://arxiv.org/abs/1706.03762' } },
+                { insert: '\n' },
+                { insert: { hr: true } }
+              ]
+            }
+          },
+          researchObjective: 'Replace recurrence entirely with Multi-Head Self-Attention mechanisms.',
+          dataset: {
+            format: 'quill-delta-v1',
+            delta: {
+              ops: [
+                { insert: 'WMT 2014 Benchmarks' },
+                { insert: '\n', attributes: { header: 2 } },
+                { insert: 'English-German: ~4.5M sentence pairs (BPE ~37k tokens).' },
+                { insert: '\n', attributes: { list: 'bullet' } },
+                { insert: 'English-French: ~36M sentence pairs (32k word-piece vocab).' },
+                { insert: '\n', attributes: { list: 'bullet' } }
+              ]
+            }
+          },
+          methodology: {
+            format: 'quill-delta-v1',
+            delta: {
+              ops: [
+                { insert: '1. Scaled Dot-Product Attention combines queries and keys with inline factor ' },
+                { insert: { 'math-equation': { latex: 'd_k = 64,\\; E = mc^2 + \\sqrt{a^2 + b^2}', displayMode: false } } },
+                { insert: ' as shown below:\n' },
+                {
+                  insert: {
+                    'research-image': {
+                      imageId: savedPng.id,
+                      widthPct: 85,
+                      align: 'center',
+                      caption: 'Fig. 1: End-to-End Transformer Pipeline (PNG Diagram)',
+                      source: 'Vaswani et al. (2017), Figure 1',
+                      fileName: 'transformer_arch.png'
+                    }
+                  }
+                },
+                { insert: '2. Regularized Objective Loss Function:\n' },
+                {
+                  insert: {
+                    'math-equation': {
+                      latex: '\\mathcal{L}(\\theta) = -\\sum_{i=1}^{N} y_i \\log(\\hat{y}_i) + \\frac{\\lambda}{2}\\|\\theta\\|_2^2',
+                      displayMode: true
+                    }
+                  }
+                },
+                { insert: '\n3. Encoder & Decoder stack explanation preserving exact insertion order.\n' },
+                { insert: 'def attention(Q, K, V):' },
+                { insert: '\n', attributes: { 'code-block': true } },
+                { insert: '    return softmax(Q @ K.T / sqrt(d_k)) @ V' },
+                { insert: '\n', attributes: { 'code-block': true } }
+              ]
+            }
+          },
+          evaluationProtocol: {
+            format: 'quill-delta-v1',
+            delta: {
+              ops: [
+                { insert: 'Trained for 3.5 days on 8 NVIDIA P100 GPUs using Adam optimizer with warmup steps = 4000.\n' },
+                {
+                  insert: {
+                    'research-image': {
+                      imageId: savedWebp.id,
+                      widthPct: 75,
+                      align: 'center',
+                      caption: 'Fig. 2: Hyperparameter Ablation Summary (WEBP converted to PNG)',
+                      source: 'Author Ablation Table 3',
+                      fileName: 'ablation_plot.webp'
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          evaluationMetrics: {
+            format: 'quill-delta-v1',
+            delta: {
+              ops: [
+                { insert: 'BLEU comparison across architectural variants (multi-page repeating header table):\n' },
+                {
+                  insert: {
+                    'research-table': {
+                      hasHeader: true,
+                      rows: largeComparisonRows
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          keyFindings: 'Transformer (big) achieved 28.4 BLEU on EN-DE and 41.8 BLEU on EN-FR at a fraction of prior compute cost.',
+          limitations: 'Self-attention scales quadratically with sequence length O(n^2 · d), constraining long-context inputs.',
+          futureWork: 'Apply attention models to images, audio, video, and local sparse attention patterns.',
+          criticalAnalysis: 'Seminal architecture that unified NLP and multimodal representation learning. ব্যক্তিগত বিশ্লেষণ।'
+        });
 
+        const pdfRes = await window.PDFExporter.exportPaperNotesAsPDF(paper, notes, { download: false });
+        if (!pdfRes || !(pdfRes.blob instanceof Blob) || pdfRes.blob.size < 15000) {
+          throw new Error('Generated PDF blob invalid or unexpectedly small');
+        }
+        const header = new TextDecoder().decode(await pdfRes.blob.slice(0, 5).arrayBuffer());
         if (!header.startsWith('%PDF')) {
-          throw new Error('Invalid PDF magic bytes: ' + header);
+          throw new Error('Invalid PDF header: ' + header);
         }
 
-        console.log(`PDF verified! Size: ${pdfBlob.size} bytes. Magic: ${header}`);
+        const base64Pdf = await new Promise((resolve) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result.split(',')[1]);
+          r.readAsDataURL(pdfRes.blob);
+        });
+
+        await window.ResearchMateDB.deletePaper(paper.id);
+
+        statusEl.textContent = `SUCCESS: ${pdfRes.filename} (${pdfRes.blob.size} bytes)`;
+        window.__pdfTestResult = { status: 'SUCCESS', filename: pdfRes.filename, size: pdfRes.blob.size, base64Pdf };
 
         await fetch('/report_test_results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             status: 'SUCCESS',
-            pdfSize: pdfBlob.size,
+            filename: pdfRes.filename,
+            pdfSize: pdfRes.blob.size,
             magic: header,
-            msg: `Successfully generated valid PDF (${pdfBlob.size} bytes) with Bengali Unicode!`
+            base64Pdf
           })
         }).catch(() => {});
       } catch (e) {
-        console.error('PDF error:', e);
+        console.error(e);
+        statusEl.textContent = 'ERROR: ' + e.message;
+        window.__pdfTestResult = { status: 'ERROR', error: e.message };
         await fetch('/report_test_results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -101,7 +257,7 @@
       }
     }
 
-    window.onload = testPdf;
+    window.onload = runPdfVerification;
   </script>
 </body>
 </html>

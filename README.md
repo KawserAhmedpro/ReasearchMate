@@ -1,8 +1,8 @@
-# ResearchMate V1.1 📖
+# ResearchMate V1.2 📖
 > **A Minimal Personal Research Paper Literature Review Notebook**
-> *With Original PDF Upload & Complete Portable Backup/Restore*
+> *Unified Rich Content Notes, Original PDF Archive, Vector PDF Export & Complete Backup/Restore*
 
-ResearchMate is a lightweight, clean, fast, and responsive web application designed for personal academic research. It replaces bulky spreadsheets with an elegant, distraction-free digital notebook where you can collect, organize, save, update, view original research paper PDFs, and export/backup your entire research library.
+ResearchMate is a lightweight, clean, fast, and responsive browser-only web application designed for personal academic research. It replaces bulky spreadsheets with a distraction-free digital notebook where you can collect papers, attach original PDFs, author rich structured literature reviews (with diagrams, comparison tables, and LaTeX math), export clean multi-page A4 vector PDFs, and back up or restore your entire research library offline.
 
 ---
 
@@ -19,57 +19,48 @@ ResearchMate is a lightweight, clean, fast, and responsive web application desig
                [View Original PDF]
                          │
                          ▼
-        [10-Section Literature Review Notes] ◄──► [Edit / Save Notes]
+    [10 Unified Rich-Content Review Editors]
+   (Text + Diagrams + Tables + LaTeX Equations)
                          │
-                         ├──► [Download Notes PDF]
-                         └──► [Data Management: Full ZIP Backup / Restore / JSON]
+                         ├──► [Formatted Preview & Vector A4 PDF Export]
+                         └──► [Data Management: V2 Full ZIP Backup / Merge & Replace / JSON]
 ```
 
 ### Key Separation of Concerns
 - **Research Paper Information is fixed after creation**: Bibliographic metadata (Title, Authors, Year, DOI/URL) and any attached original PDF file are immutable once saved, maintaining an accurate academic record.
-- **Literature Review Notes are fully editable**: Your personal critique, notes, and analysis across all 10 core dimensions can be written, revised, and expanded at any time.
+- **Literature Review Notes are rich and freely editable**: Your analysis across all 10 structured dimensions can combine text, headings, code, links, embedded diagrams, editable comparison tables, and LaTeX equations in a single unified flow per section.
 
 ---
 
-## 🚀 What's New in Version 1.1
+## 🚀 What's New in Version 1.2
 
-### 1. Original Research Paper PDF Upload & Viewing
-- **Two Creation Methods in Add Paper**:
-  - **Option 1: Add Paper Manually**: Preserves the original manual entry workflow (Title, Authors, Year, DOI/URL).
-  - **Option 2: Upload Research Paper PDF**:
-    - File picker & Drag-and-drop dropzone.
-    - Displays selected PDF filename and formatted file size (e.g. `2.4 MB`).
-    - Replace or remove file before saving.
-    - Automatic, client-side metadata extraction (extracts Title, Author, and Publication Year from PDF header/trailer bytes when present).
-    - Always allows manual entry and editing before saving.
-- **Local PDF Storage**:
-  - Stored locally in your browser's IndexedDB as binary Blobs (in the dedicated `pdfs` store).
-  - Zero external uploads. Complete privacy.
-- **View Original PDF**:
-  - Papers with an uploaded PDF feature a **"View Original PDF"** action button and a `PDF Attached` badge.
-  - Generates a temporary Blob URL and opens the paper in a new browser tab.
-  - Automatically cleans up object URLs.
-  - Papers without an uploaded PDF cleanly omit this action.
+### 1. Unified Rich Notes Editor Across All 10 Sections
+- Built on locally vendored **Quill 2.0** (`js/rich-editor.js`) with **one independent unified editor per section**, preserving exact insertion order across mixed content:
+  - **Rich Text & Structure**: Normal paragraph, H1–H3 headings, bold, italic, underline, strikethrough, bullet & numbered lists, blockquotes, horizontal dividers, hyperlinks, inline code / code blocks, undo & redo (`Ctrl+Z` / `Ctrl+Y`).
+  - **Embedded Figures / Diagrams (`PNG`, `JPG/JPEG`, `WEBP`)**: Upload via toolbar, drag-and-drop, or clipboard paste. Includes size presets (`S` / `M` / `L` / `Full`) & corner drag resize preserving aspect ratio, `Left` / `Center` / `Right` alignment, optional **Figure Caption & Source** metadata, image replacement, and deletion. Binary blobs are stored cleanly in IndexedDB's `images` store (only lightweight `imageId` references are saved in note Delta JSON — never bloated Base64 strings).
+  - **Interactive Comparison Tables**: Insert custom row/column tables with header row toggle, direct cell typing with `Tab`/`Shift+Tab` navigation, inline bold/italic/underline/code formatting in cells, contextual `+ Row`, `- Row`, `+ Col`, `- Col`, `Header` toggle, and horizontal scroll wrapper for wide tables.
+  - **Mathematical Equations (LaTeX via KaTeX)**: Insert inline or display (`$$...$$`) equations with live KaTeX preview and quick symbol buttons, and click any rendered equation to re-edit its raw LaTeX source.
+- **Reliable Autosave & Navigation Safety**: Debounced autosave (`1200ms`) waits for pending image writes and shows clear live status (`Saving...`, `Unsaved changes`, `Saved`, `Save failed`), plus `Ctrl+S` manual save and flush-before-export/navigation guards.
+- **Formatted Read-Only Preview**: Clean academic reading view hydrating IndexedDB images, tables, formatted text, and rendered KaTeX equations.
 
-### 2. Complete Backup & Restore System (Data Management)
-Because ResearchMate has no backend or cloud database, the **Data Management** section enables transferring your research library across computers and browsers:
+### 2. Professional Layout-Aware Vector PDF Export (`pdfmake`)
+- Generates clean, selectable multi-page **A4 PDFs** (`<SanitizedTitle>_Review_Notes.pdf`) via `js/pdf-export.js` and locally embedded Noto fonts (`NotoSans`, `NotoSansBengali`, `NotoSansMono`):
+  - Full **English + Bengali Unicode** text shaping (including conjuncts and vowel marks) inside metadata banners, headings, paragraphs, code blocks, captions, and table cells.
+  - Preserves exact block ordering across all 10 sections with clean page breaks (`dontBreakRows: true`, `keepWithHeaderRows: 1` & `headerRows: 1` repeating table headers across pages, `unbreakable: true` figure + caption groups).
+  - Converts WEBP figures to PNG cleanly when needed and scales embedded images proportionally to printable page width.
+  - Rasterizes inline & display KaTeX equations at high DPI with embedded KaTeX SVG fonts (no raw fallback LaTeX leaks), clickable hyperlinks, running headers, and `Page X of Y` footers.
 
-- **1. Export Full Backup (.ZIP)**:
-  - Generates `ResearchMate_Backup_YYYY-MM-DD.zip`.
-  - Packages:
-    - `backup-info.json` (versioning, export timestamp, summary)
-    - `papers.json` (all paper bibliographic metadata)
-    - `notes.json` (all 10-section literature review notes)
-    - `original-pdfs/` (folder containing all uploaded original research paper PDFs mapped by unique ID)
-  - Generated client-side using bundled `JSZip`.
-- **2. Import / Restore Backup (.ZIP)**:
-  - Validates ZIP archive before modifying data (verifies `backup-info.json`, `papers.json`, `notes.json`, and PDF files).
-  - Displays backup summary (Papers, Notes, PDFs, and Archive Date).
-  - Two restore modes:
-    - **Mode A: Merge with Existing Data**: Adds new papers and notes without overwriting existing entries. Conflicting IDs are flagged and preserved safely.
-    - **Mode B: Replace All Existing Data**: Atomically wipes current library and restores the backup. Requires explicit confirmation.
-- **3. Export Notes Only (.JSON)**:
-  - Generates a lightweight `ResearchMate_Notes_Backup_YYYY-MM-DD.json` containing only paper metadata and literature review notes (no PDF files attached).
+### 3. Enhanced Portable Backup & Restore (Format V2 + Backward-Compatible V1)
+- **Export Full Backup (.ZIP)** (`backupVersion: 2`):
+  - Packages `backup-info.json`, `papers.json`, `notes.json`, `images.json`, `original-pdfs/`, and `images/`.
+- **Import / Restore Backup (.ZIP)**:
+  - Restores both **V2** archives and **legacy V1/V1.1** archives (automatically upgrading plain-text notes safely into structured Quill Delta format).
+  - Supports **Merge with Existing Data** with per-paper conflict resolution (`Keep Existing` vs `Replace with Backup`), plus **Replace All Existing Data** with confirmation guard and quota-exceeded atomic protection.
+- **Export Notes Only (.JSON)**: Exports paper bibliographic metadata, rich structured Delta notes (tables, raw LaTeX source, and image metadata references), clearly noting that binary PDFs and embedded image files require Full Backup (`.ZIP`).
+
+### 4. Preserved V1.1 Capabilities
+- Two paper creation workflows (**Add Manually** or **Upload Research Paper PDF** with client-side metadata extraction).
+- Local binary original PDF storage (`pdfs` store) and one-click **"View Original PDF"** tab opening.
 
 ---
 
@@ -78,12 +69,12 @@ Because ResearchMate has no backend or cloud database, the **Data Management** s
 1. `01. Research Problem` — What problem are the researchers trying to solve?
 2. `02. Research Objective` — What is the main objective or goal of this research?
 3. `03. Dataset` — Dataset name, size, source, characteristics, and important data notes.
-4. `04. Methodology / Proposed Method` — Proposed approach, algorithms, models, and implementation.
+4. `04. Methodology / Proposed Method` — Proposed methodology, algorithms/models, main approach, details.
 5. `05. Evaluation Protocol` — Train/test splits, validation strategy, baselines, setup.
-6. `06. Evaluation Metrics` — Accuracy, Precision, Recall, F1, RMSE, MAE, or other metrics.
+6. `06. Evaluation Metrics` — Accuracy, Precision, Recall, F1, RMSE, MAE, or other relevant metrics.
 7. `07. Key Findings` — Experimental results, discoveries, and contributions.
 8. `08. Limitations` — Weaknesses, dataset/experimental limitations, unresolved problems.
-9. `09. Future Work` — Future directions suggested by the authors.
+9. `09. Future Work` — Future research directions suggested by the authors.
 10. `10. My Critical Analysis & Research Opportunities` — Personal understanding, learnings, criticisms, research gaps, and ideas.
 
 ---
@@ -91,10 +82,11 @@ Because ResearchMate has no backend or cloud database, the **Data Management** s
 ## 🛠️ Technology Stack
 
 - **Frontend**: Vanilla HTML5, CSS3, Modern JavaScript (ES6+).
-- **Database**: Native Browser IndexedDB (`ResearchMateDB`, Version 2).
-- **PDF Generation**: `jsPDF` & `html2pdf.js` (locally vendored in `js/vendor/` for 100% offline capability, supports Bengali and Unicode).
-- **ZIP Archiving**: `JSZip` (locally vendored in `js/vendor/jszip.min.js`).
-- **Dependencies**: Zero external framework dependencies (No React, Vue, Angular, Node.js, or backend servers).
+- **Database**: Native Browser IndexedDB (`ResearchMateDB`, Version 3 — auto-migrates V1/V2 plain-text records cleanly on upgrade).
+- **Rich Editor & Math**: `Quill 2.0.2` + `KaTeX` (all JS/CSS/woff2 fonts locally vendored).
+- **PDF Generation**: `pdfmake 0.2.20` with embedded `NotoSans`, `NotoSansBengali`, and `NotoSansMono` fonts (locally vendored in `js/vendor/`).
+- **ZIP Archiving**: `JSZip` (`js/vendor/jszip.min.js`).
+- **Offline & Static Ready**: 100% browser-local; deploys directly to GitHub Pages or runs from any static HTTP server with zero backend/Node dependencies.
 
 ---
 
@@ -103,35 +95,43 @@ Because ResearchMate has no backend or cloud database, the **Data Management** s
 ```text
 ResearchMate/
 │
-├── index.html                   # Main application entry point & semantic markup
+├── index.html                        # Application shell, views & editor modals
 │
 ├── css/
-│   └── style.css                # Notion-inspired academic theme, dropzones, print styles
+│   ├── style.css                     # Academic minimal theme, rich editor & responsive layout
+│   └── vendor/
+│       ├── quill.snow.css            # Vendored Quill 2 theme stylesheet
+│       ├── katex.min.css             # Vendored KaTeX stylesheet
+│       └── fonts/                    # Local KaTeX woff2/woff/ttf font files
 │
 ├── js/
-│   ├── app.js                   # Navigation router, view coordinator, Data Management
-│   ├── database.js              # IndexedDB V2 (papers, notes, pdfs, backup & restore)
-│   ├── papers.js                # Manual entry, PDF upload, extraction, PDF viewing
-│   ├── notes.js                 # 10-section note editor, autosize, unsaved guards
-│   ├── pdf-export.js            # Individual academic PDF generator (Unicode & Bengali)
+│   ├── app.js                        # Navigation router, unsaved guards & Data Management UI
+│   ├── database.js                   # IndexedDB V3 (papers, notes, pdfs, images, ZIP V1/V2 backup)
+│   ├── rich-editor.js                # Unified Quill 2 editor, image store, tables & KaTeX math
+│   ├── pdf-export.js                 # Vector A4 PDF exporter (pdfmake + KaTeX SVG + Noto fonts)
+│   ├── papers.js                     # Manual entry, PDF upload, metadata extraction & viewing
+│   ├── notes.js                      # 10-section editor controller, autosave & preview mode
 │   └── vendor/
-│       ├── jszip.min.js         # JSZip library (offline bundle)
-│       ├── jspdf.umd.min.js     # jsPDF library (offline bundle)
-│       └── html2pdf.bundle.min.js # html2pdf with html2canvas (offline bundle)
+│       ├── jszip.min.js              # JSZip offline bundle
+│       ├── quill.js                  # Quill 2.0.2 offline bundle
+│       ├── katex.min.js              # KaTeX offline bundle
+│       ├── katex-svg-style.js        # Embedded WOFF2 KaTeX CSS for SVG math export
+│       ├── pdfmake.min.js            # pdfmake 0.2.20 vector PDF engine
+│       └── pdf-fonts.js              # Compiled NotoSans, NotoSansBengali & NotoSansMono VFS
 │
 ├── assets/
 │   └── icons/
-│       └── book.svg             # Vector academic emblem
+│       └── book.svg                  # Vector emblem
 │
-├── tests/                       # Automated test suite (Headless Chrome & E2E)
-│   ├── test_runner.html         # Unit & database integration tests (V1.1)
-│   ├── e2e_runner.html          # End-to-end browser UI workflow tests (V1.1)
-│   ├── test_pdf.html            # PDF generator & Bengali Unicode test
-│   ├── run.py                   # Python test executor for unit tests
-│   └── run_e2e.py               # Python test executor for E2E workflows
+├── tests/                            # Automated verification suites (Headless Chrome)
+│   ├── test_runner.html              # Core DB, V2->V3 migration, backup/restore & PDF tests
+│   ├── e2e_runner.html               # End-to-end interactive UI, mobile & rich editor tests
+│   ├── test_pdf.html                 # Multi-page V1.2 PDF generation verification fixture
+│   ├── run.py                        # Python runner for core unit/integration tests
+│   └── run_e2e.py                    # Python runner for E2E UI tests
 │
-├── start.bat                    # One-click Windows local launcher
-└── README.md                    # Documentation & operational guide
+├── start.bat                         # One-click Windows local server launcher
+└── README.md                         # Documentation & operational guide
 ```
 
 ---
@@ -139,7 +139,7 @@ ResearchMate/
 ## 💻 How to Run Locally
 
 ### Method 1: Using `start.bat` (Windows)
-Double-click `start.bat` in File Explorer. It opens `http://localhost:8000` in your default browser and launches a local server.
+Double-click `start.bat` in File Explorer. It launches a local Python HTTP server on `http://localhost:8000` and opens your browser.
 
 ### Method 2: Using Python
 ```powershell
@@ -148,93 +148,34 @@ python -m http.server 8000
 ```
 Navigate to: `http://localhost:8000`
 
-### Method 3: Direct File Open
-Open `index.html` directly in any modern browser.
-
 ---
 
-## 🗄️ How IndexedDB Stores the Data (Schema V2)
+## 🗄️ How IndexedDB Stores the Data (Schema V3)
 
-ResearchMate uses **IndexedDB** (`ResearchMateDB`, Version 2).
+ResearchMate uses **IndexedDB** (`ResearchMateDB`, Version 3):
 
-### 1. `papers` Store (Bibliographic Metadata)
-- **Key Path**: `id`
-- **Indexes**: `createdAt`, `title`, `authors`
-- **Fields**:
-  ```json
-  {
-    "id": "paper_m4v8y2p9_78bc34",
-    "title": "Attention Is All You Need",
-    "authors": "Ashish Vaswani, Noam Shazeer, Niki Parmar, et al.",
-    "year": 2017,
-    "doiUrl": "https://arxiv.org/abs/1706.03762",
-    "hasPdf": true,
-    "pdfFileName": "attention_2017.pdf",
-    "pdfFileSize": 2215420,
-    "createdAt": "2026-11-11T13:30:00.000Z"
-  }
-  ```
-
-### 2. `notes` Store (10 Literature Review Sections)
-- **Key Path**: `paperId` (matches paper's `id`)
-- **Indexes**: `updatedAt`
-- **Fields**: `researchProblem`, `researchObjective`, `dataset`, `methodology`, `evaluationProtocol`, `evaluationMetrics`, `keyFindings`, `limitations`, `futureWork`, `criticalAnalysis`, `createdAt`, `updatedAt`.
-
-### 3. `pdfs` Store (Original Binary Files)
-- **Key Path**: `paperId`
-- **Indexes**: `uploadedAt`, `fileName`
-- **Fields**:
-  ```json
-  {
-    "paperId": "paper_m4v8y2p9_78bc34",
-    "fileBlob": Blob,
-    "fileName": "attention_2017.pdf",
-    "fileSize": 2215420,
-    "fileType": "application/pdf",
-    "uploadedAt": "2026-11-11T13:30:00.000Z"
-  }
-  ```
-
----
-
-## 📦 How to Export and Restore Backups
-
-### Exporting Full Backup (.ZIP)
-1. Go to **Data Management** from the top header navigation.
-2. In the **1. Export Full Backup (.ZIP)** card, click **Download Full Backup (.ZIP)**.
-3. Your browser will download `ResearchMate_Backup_YYYY-MM-DD.zip` containing all papers, review notes, and original PDFs.
-
-### Restoring on Another Computer
-1. Open ResearchMate on your other computer or browser.
-2. Go to **Data Management**.
-3. In **2. Import / Restore Backup (.ZIP)**, drag and drop or select your `ResearchMate_Backup_*.zip` file.
-4. ResearchMate will inspect and validate the archive.
-5. Select your restore mode:
-   - **Mode A: Merge with Existing Data**: Keeps existing papers and adds new ones.
-   - **Mode B: Replace All Existing Data**: Erases current library and restores the archive.
-6. Click **Restore Library Now**.
-
-### Exporting Notes Only (.JSON)
-In **Data Management**, click **Download Notes Only (.JSON)** to save a lightweight text backup of your literature reviews without PDFs.
+1. **`papers` Store** (`keyPath: 'id'`, indexes: `createdAt`, `title`, `authors`): Bibliographic metadata, `hasPdf`, `pdfFileName`, `pdfFileSize`.
+2. **`notes` Store** (`keyPath: 'paperId'`, index: `updatedAt`): All 10 section fields stored as structured `{ format: 'quill-delta-v1', delta: { ops: [...] } }` objects (V1/V2 plain strings are normalized non-destructively during DB upgrade and load).
+3. **`pdfs` Store** (`keyPath: 'paperId'`, indexes: `uploadedAt`, `fileName`): Original paper PDF binary `Blob`.
+4. **`images` Store** (`keyPath: 'id'`, indexes: `paperId`, `sectionId`, `createdAt`): Embedded figure binary `Blob`s (`PNG`, `JPG/JPEG`, `WEBP`) with original filename, MIME type, dimensions, and byte size.
 
 ---
 
 ## 🧪 Automated Testing
 
-To run the automated verification test suites in headless Chrome:
+Run both headless Chrome automated verification suites after changes:
 ```powershell
-# 1. Run Unit & Database Integration Tests
+# 1. Run Core DB, Migration, Backup/Restore & PDF Export Tests
 python tests/run.py
 
-# 2. Run End-to-End Browser UI Workflow Tests
+# 2. Run Interactive End-to-End Browser UI Workflow Tests
 python tests/run_e2e.py
 ```
-Both test suites validate manual entry, PDF upload, viewing original PDFs, note-saving, individual PDF export, full ZIP backup, and full ZIP restore.
 
 ---
 
 ## ⚠️ Known Limitations & Considerations
 
-1. **Browser Profile Sandbox**: Data is stored inside your specific browser's IndexedDB profile. Manually clearing your browser's site cookies and offline data will reset IndexedDB. *Recommendation*: Use **Export Full Backup (.ZIP)** periodically to keep a permanent offline archive in your personal cloud or external drive.
-2. **Immutable Bibliographic Info**: Paper metadata and attached PDFs are fixed after addition to preserve scientific citation integrity. To alter paper metadata, delete the paper and re-add it.
-3. **Large PDF Files**: Modern browsers can store several gigabytes in IndexedDB, but uploading unusually large PDFs (>100MB each) may consume substantial browser quota.
+1. **Browser Profile Sandbox**: Data lives locally in your browser's IndexedDB profile. Periodically use **Export Full Backup (.ZIP)** to keep an offline archive across machines/browsers.
+2. **Immutable Bibliographic Info**: Paper metadata and attached original PDFs remain fixed after creation to preserve citation integrity.
+3. **Notes-Only JSON Export Scope**: `.JSON` exports keep formatted text, tables, raw LaTeX source, and image reference metadata, but exclude binary PDFs and binary images; use **Export Full Backup (.ZIP)** for a complete transferable archive.

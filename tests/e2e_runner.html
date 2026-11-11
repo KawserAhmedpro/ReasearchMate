@@ -1,181 +1,333 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>ResearchMate V1.1 End-to-End UI Test Suite</title>
-  <link rel="stylesheet" href="../css/style.css">
-  <script src="../js/vendor/jszip.min.js"></script>
-  <script src="../js/vendor/jspdf.umd.min.js"></script>
-  <script src="../js/vendor/html2pdf.bundle.min.js"></script>
+  <meta charset="UTF-8">
+  <title>ResearchMate V1.2 — End-to-End Interactive Browser Suite</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; background: #f8fafc; color: #0f172a; }
+    #appFrame { width: 1200px; height: 780px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px; background: #fff; }
+    #logs { background: #1e293b; color: #f8fafc; padding: 14px; border-radius: 8px; font-family: monospace; font-size: 13px; max-height: 280px; overflow-y: auto; }
+    .log-pass { color: #4ade80; }
+    .log-fail { color: #f87171; font-weight: bold; }
+    .log-info { color: #60a5fa; }
+  </style>
 </head>
 <body>
-  <div id="testStatusBanner" style="padding: 10px; background: #e0f2fe; font-family: monospace;">Running V1.1 E2E tests...</div>
-  <iframe id="appFrame" src="../index.html" style="width: 100%; height: 900px; border: 1px solid #ccc;"></iframe>
+  <h1>ResearchMate V1.2 — End-to-End Interactive Browser Suite</h1>
+  <div id="testStatusBanner" style="padding: 10px; margin-bottom: 10px; font-weight: bold; background: #e2e8f0; border-radius: 6px;">Running V1.2 E2E Tests...</div>
+  <iframe id="appFrame" src="../index.html"></iframe>
+  <div id="logs"></div>
 
   <script>
     const results = [];
+    const pageErrors = [];
 
-    function log(msg, status = 'INFO') {
-      const line = `[${status}] ${msg}`;
-      console.log(line);
-      results.push({ msg, status });
+    function log(msg, type = 'INFO') {
+      const div = document.createElement('div');
+      div.className = 'log-' + type.toLowerCase();
+      div.textContent = `[${type}] ${msg}`;
+      document.getElementById('logs').appendChild(div);
+      results.push({ status: type, msg });
     }
 
-    function assert(cond, name) {
-      if (cond) {
-        log(`PASS: ${name}`, 'PASS');
-      } else {
-        log(`FAIL: ${name}`, 'FAIL');
-        throw new Error(`Assertion failed: ${name}`);
+    function assert(cond, msg) {
+      if (!cond) {
+        log(msg, 'FAIL');
+        throw new Error('E2E Assertion Failed: ' + msg);
       }
+      log(msg, 'PASS');
     }
 
     const wait = ms => new Promise(r => setTimeout(r, ms));
 
+    async function createPngFile(name, width, height, color, text) {
+      const c = document.createElement('canvas');
+      c.width = width;
+      c.height = height;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(text || 'Diagram', 16, Math.round(height / 2));
+      const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+      return new File([blob], name, { type: 'image/png' });
+    }
+
     async function runE2E() {
       try {
-        log('Starting ResearchMate V1.1 E2E UI Testing...');
-        const iframe = document.getElementById('appFrame');
-
-        await new Promise(r => {
-          if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') r();
-          else iframe.onload = r;
+        const frame = document.getElementById('appFrame');
+        await new Promise(resolve => {
+          if (frame.contentDocument && frame.contentDocument.readyState === 'complete') {
+            resolve();
+          } else {
+            frame.onload = resolve;
+          }
         });
 
-        const doc = iframe.contentDocument;
-        const win = iframe.contentWindow;
+        await wait(600);
+        const doc = frame.contentDocument;
+        const win = frame.contentWindow;
 
+        // Track any unhandled runtime errors inside the real app window
+        win.addEventListener('error', (e) => {
+          pageErrors.push(e.message || 'Window error');
+        });
+        win.addEventListener('unhandledrejection', (e) => {
+          pageErrors.push((e.reason && e.reason.message) || String(e.reason || 'Unhandled rejection'));
+        });
+
+        log('App loaded in iframe. Starting V1.2 UI verification...');
+
+        // E2E Test 1: Dashboard active initially & clean library + 390px mobile responsiveness check
+        const dashboardView = doc.getElementById('dashboardSection');
+        assert(dashboardView && dashboardView.classList.contains('active-view'), 'Dashboard view is active on boot');
+        frame.style.width = '390px';
+        await wait(120);
+        assert(doc.documentElement.scrollWidth <= 390, `Mobile viewport 390px has zero horizontal overflow (scrollWidth=${doc.documentElement.scrollWidth})`);
+        frame.style.width = '1200px';
+        await wait(80);
+
+        // E2E Test 2: Open Add Paper Modal & create Manual Paper ("ResNet")
+        const addBtn = doc.querySelector('[data-action="open-add-paper-modal"]');
+        assert(addBtn !== null, 'Found Add New Paper CTA button');
+        addBtn.click();
+        await wait(150);
+
+        const modal = doc.getElementById('addPaperModal');
+        assert(modal.classList.contains('active'), 'Add Paper modal opened');
+
+        doc.getElementById('paperTitleInput').value = 'ResNet: Deep Residual Learning for Image Recognition';
+        doc.getElementById('paperAuthorsInput').value = 'He et al.';
+        doc.getElementById('paperYearInput').value = '2016';
+        doc.getElementById('paperDoiInput').value = 'https://arxiv.org/abs/1512.03385';
+
+        doc.getElementById('addPaperManualForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
         await wait(500);
 
-        // UI Test 1: Verify Initial Dashboard State
-        assert(doc.getElementById('dashboardSection').classList.contains('active-view'), 'Dashboard is active on initial load');
-        assert(doc.getElementById('statTotalPapers').textContent === '0', 'Initial total papers count is 0');
-        assert(doc.getElementById('statPdfCount').textContent === '0', 'Initial PDF count is 0');
+        // Verify Note Editor mounted all 10 unified rich section editors
+        const notesSection = doc.getElementById('notesSection');
+        assert(notesSection.classList.contains('active-view'), 'Navigated to Note Editor view automatically');
+        assert(doc.getElementById('notesPaperTitle').textContent.includes('ResNet'), 'Notes banner shows ResNet title');
+        const sectionCards = doc.querySelectorAll('.note-section-card');
+        const richEditors = doc.querySelectorAll('.note-rich-editor-host .ql-editor');
+        assert(sectionCards.length === 10 && richEditors.length === 10, 'All 10 sections mounted independent unified rich editors');
 
-        // UI Test 2: Open Add Paper Modal
-        const openModalBtn = doc.querySelector('[data-action="open-add-paper-modal"]');
-        assert(openModalBtn !== null, 'Found Add Paper button');
-        openModalBtn.click();
+        // E2E Test 3: Unified Rich Text + Section Independence + Equation Modal + Re-edit Equation
+        const rpEditor = win.NotesManager.getSectionEditor('researchProblem');
+        const dsEditor = win.NotesManager.getSectionEditor('dataset');
+        assert(rpEditor && dsEditor, 'Rich editor handles accessible via NotesManager');
+
+        rpEditor.quill.setText('Gradient degradation in very deep networks (গভীর নেটওয়ার্কে সমস্যা)।\n', 'user');
+        rpEditor.quill.formatLine(0, 10, 'header', 2, 'user');
+        rpEditor.quill.insertEmbed(rpEditor.quill.getLength() - 1, 'hr', true, 'user');
         await wait(100);
 
-        const addModal = doc.getElementById('addPaperModal');
-        assert(addModal.classList.contains('active'), 'Add Paper Modal is open');
+        assert(dsEditor.quill.getText().trim() === '', 'Section independence preserved (Dataset stayed empty while editing Research Problem)');
 
-        // UI Test 3: Test Option 1 (Manual Entry)
-        const tabManualBtn = doc.getElementById('tabAddManualBtn');
-        assert(tabManualBtn !== null, 'Found Manual Entry tab button');
-        tabManualBtn.click();
-        await wait(50);
+        // Insert Inline Math via modal in Methodology section
+        const methCard = doc.getElementById('section-methodology');
+        const methEditor = win.NotesManager.getSectionEditor('methodology');
+        methEditor.quill.setText('Residual mapping definition: ', 'user');
+        methEditor.quill.setSelection(methEditor.quill.getLength() - 1, 0, 'silent');
 
-        const titleInput = doc.getElementById('paperTitleInput');
-        const authorsInput = doc.getElementById('paperAuthorsInput');
-        const yearInput = doc.getElementById('paperYearInput');
-        const manualForm = doc.getElementById('addPaperManualForm');
+        methCard.querySelector('.rm-tool-math').click();
+        await wait(120);
+        const mathModal = doc.getElementById('mathEditorModal');
+        assert(mathModal.classList.contains('active'), 'Math Equation modal opened via toolbar button');
 
-        titleInput.value = 'ResNet: Deep Residual Learning';
-        authorsInput.value = 'He et al.';
-        yearInput.value = '2016';
-        manualForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-        await wait(600);
+        const latexInput = doc.getElementById('mathLatexInput');
+        latexInput.value = 'y = F(x) + x';
+        latexInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(80);
+        assert(doc.querySelector('#mathLivePreview .katex') !== null, 'Math modal live-preview rendered KaTeX equation');
+        doc.getElementById('applyMathBtn').click();
+        await wait(120);
 
-        // Should navigate to note editor
-        assert(doc.getElementById('notesSection').classList.contains('active-view'), 'Navigated to Note Editor for manual paper');
-        assert(doc.getElementById('notesPaperTitle').textContent === 'ResNet: Deep Residual Learning', 'Paper title in Note Editor');
-        assert(doc.getElementById('notesPaperPdfWrap').style.display === 'none', 'View Original PDF button hidden for manual paper');
+        const insertedMathEl = methCard.querySelector('.rm-math-embed');
+        assert(insertedMathEl !== null && insertedMathEl.querySelector('.katex') !== null, 'Inline KaTeX equation inserted inside Methodology editor');
 
-        // UI Test 4: Open Add Paper Modal and switch to Option 2 (Upload PDF)
-        openModalBtn.click();
+        // Click existing equation to reopen modal and edit raw LaTeX -> switch to block equation
+        insertedMathEl.click();
+        await wait(120);
+        assert(mathModal.classList.contains('active'), 'Clicking rendered equation reopens Math modal');
+        assert(latexInput.value === 'y = F(x) + x', 'Reopened Math modal preserved raw LaTeX source');
+        mathModal.querySelector('input[name="mathDisplayMode"][value="block"]').checked = true;
+        latexInput.value = '\\mathcal{F}(x) = \\mathcal{H}(x) - x';
+        doc.getElementById('applyMathBtn').click();
+        await wait(120);
+        assert(methCard.querySelector('.rm-math-embed.rm-math-block .katex') !== null, 'Edited equation switched to display/block KaTeX mode cleanly');
+
+        // E2E Test 4: Insert Comparison Table + Structural Row/Col Editing
+        methCard.querySelector('.rm-tool-table').click();
+        await wait(120);
+        const tableModal = doc.getElementById('insertTableModal');
+        assert(tableModal.classList.contains('active'), 'Insert Table modal opened');
+        doc.getElementById('tableRowsInput').value = '2';
+        doc.getElementById('tableColsInput').value = '2';
+        doc.getElementById('tableHeaderToggle').checked = true;
+        doc.getElementById('applyTableInsertBtn').click();
+        await wait(150);
+
+        assert(methCard.querySelectorAll('.rm-editor-table tr').length === 2, 'Inserted 2x2 interactive table inside Methodology');
+        const tableBtns = Array.from(methCard.querySelectorAll('.rm-table-btn'));
+        tableBtns.find(b => b.textContent.trim() === '+ Row').click();
+        await wait(80);
+        Array.from(methCard.querySelectorAll('.rm-table-btn')).find(b => b.textContent.trim() === '+ Col').click();
+        await wait(80);
+        assert(methCard.querySelectorAll('.rm-editor-table tr').length === 3, 'Table "+ Row" increased rows to 3');
+        assert(methCard.querySelectorAll('.rm-editor-table tr:first-child th, .rm-editor-table tr:first-child td').length === 3, 'Table "+ Col" increased columns to 3');
+
+        // Type inside cell & confirm editor text didn't break
+        const targetCell = methCard.querySelector('.rm-table-cell-edit[data-row="1"][data-col="0"]');
+        targetCell.innerHTML = '<b>ResNet-50</b>';
+        targetCell.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(80);
+
+        // E2E Test 5: Drag-and-drop PNG Image + Caption/Source + Resize/Align + Autosave
+        const pngFile = await createPngFile('resnet_block.png', 220, 130, '#0f766e', 'Residual Block');
+        const dtImg = new DataTransfer();
+        dtImg.items.add(pngFile);
+        const methQuillRoot = methCard.querySelector('.ql-editor');
+        const dropEvt = new win.Event('drop', { bubbles: true, cancelable: true });
+        Object.defineProperty(dropEvt, 'dataTransfer', { value: dtImg });
+        methQuillRoot.dispatchEvent(dropEvt);
+        await wait(500);
+
+        const figEl = methCard.querySelector('figure.rm-figure');
+        assert(figEl !== null, 'Dropped PNG inserted unified figure inside Methodology');
+        const figImg = figEl.querySelector('img');
+        assert(figImg && figImg.getAttribute('src') && figImg.getAttribute('src').startsWith('blob:'), 'Inserted image renders from IndexedDB via blob: URL (not data:image/ base64)');
+
+        // Resize to M (60%) & Align Left
+        const figBtns = Array.from(figEl.querySelectorAll('.rm-fig-btn'));
+        figBtns.find(b => b.textContent.trim() === 'M').click();
+        await wait(80);
+        Array.from(methCard.querySelectorAll('figure.rm-figure .rm-fig-btn')).find(b => b.textContent.trim() === 'Left').click();
+        await wait(80);
+        assert(methCard.querySelector('figure.rm-figure').classList.contains('align-left'), 'Figure alignment updated to Left');
+
+        // Open Image Caption & Source modal
+        Array.from(methCard.querySelectorAll('figure.rm-figure .rm-fig-btn')).find(b => b.textContent.includes('Caption')).click();
+        await wait(120);
+        const imgMetaModal = doc.getElementById('imageMetaModal');
+        assert(imgMetaModal.classList.contains('active'), 'Image Caption & Source modal opened');
+        doc.getElementById('imageCaptionInput').value = 'Fig. 1: Residual Skip Connection';
+        doc.getElementById('imageSourceInput').value = 'He et al. (2016)';
+        doc.getElementById('applyImageMetaBtn').click();
+        await wait(150);
+        assert(methCard.textContent.includes('Fig. 1: Residual Skip Connection'), 'Figure caption displayed inside unified editor');
+
+        // Verify Debounced Autosave runs and updates indicator to Saved
+        assert(doc.getElementById('notesSaveStatusText') !== null, 'Save status badge present');
+        await wait(1600);
+        const savedStatusText = doc.getElementById('notesSaveStatusText').textContent;
+        assert(savedStatusText.startsWith('Saved'), `Debounced autosave completed (${savedStatusText})`);
+
+        // E2E Test 6: Preview Mode renders rich text, hydrated image, table, KaTeX + PDF Export works
+        doc.getElementById('toggleNotesModeBtn').click();
+        await wait(350);
+        const readWrap = doc.getElementById('notesReadOnlyWrapper');
+        const readContent = doc.getElementById('notesReadOnlyContent');
+        assert(readWrap.style.display === 'block', 'Switched to Read-Only Preview Mode');
+        assert(readContent.querySelector('.katex') !== null, 'Preview Mode rendered KaTeX math');
+        assert(readContent.querySelector('table tr') !== null && readContent.textContent.includes('ResNet-50'), 'Preview Mode rendered formatted table content');
+        const previewImg = readContent.querySelector('img');
+        assert(previewImg && previewImg.getAttribute('src') && previewImg.getAttribute('src').startsWith('blob:'), 'Preview Mode hydrated IndexedDB figure image via blob URL');
+
+        // Verify PDF export for active note produces real %PDF blob cleanly
+        const exportedPdf = await win.PDFExporter.exportPaperNotesAsPDF(
+          win.NotesManager.getCurrentPaper(),
+          win.NotesManager.getCurrentNotes(),
+          { download: false }
+        );
+        assert(exportedPdf.blob instanceof win.Blob && exportedPdf.blob.size > 10000, `Live UI note exported to PDF (${exportedPdf.blob.size} bytes)`);
+
+        // Also click the toolbar Download PDF button to ensure zero runtime errors
+        doc.getElementById('notesDownloadPdfBtn').click();
+        await wait(700);
+
+        // E2E Test 7: Upload Original Research Paper PDF Tab & Badges
+        const navPapers = doc.querySelector('[data-nav="papers"]');
+        navPapers.click();
+        await wait(300);
+        doc.querySelector('#papersSection [data-action="open-add-paper-modal"]').click();
+        await wait(150);
+
+        doc.getElementById('tabAddUploadBtn').click();
         await wait(100);
+        const fakePdf = new File(['%PDF-1.4\n1 0 obj\n<< /Title (Transformer) >>\nendobj\n%%EOF'], 'transformer_paper.pdf', { type: 'application/pdf' });
+        const dtPdf = new DataTransfer();
+        dtPdf.items.add(fakePdf);
+        const pdfInput = doc.getElementById('paperPdfFileInput');
+        pdfInput.files = dtPdf.files;
+        pdfInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(250);
+        assert(doc.getElementById('selectedPdfInfoBox').style.display === 'flex', 'Selected PDF info box displayed');
 
-        const tabUploadBtn = doc.getElementById('tabAddUploadBtn');
-        assert(tabUploadBtn !== null, 'Found Upload PDF tab button');
-        tabUploadBtn.click();
-        await wait(50);
-        assert(doc.getElementById('addUploadTabContent').style.display === 'block', 'Upload tab content is visible');
+        doc.getElementById('uploadPaperTitle').value = 'Attention Is All You Need';
+        doc.getElementById('uploadPaperAuthors').value = 'Vaswani et al.';
+        doc.getElementById('uploadPaperYear').value = '2017';
+        doc.getElementById('addPaperUploadForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        await wait(500);
+        assert(doc.getElementById('notesPaperPdfWrap').style.display === 'inline-flex', 'View Original PDF button displayed for PDF-backed paper');
 
-        // Simulate file selection
-        const fakeFile = new File(['%PDF-1.4 Mock PDF Stream Content'], 'transformer_paper.pdf', { type: 'application/pdf' });
-        const fileInput = doc.getElementById('paperPdfFileInput');
-
-        // We can simulate selecting file via DataTransfer
-        const dt = new DataTransfer();
-        dt.items.add(fakeFile);
-        fileInput.files = dt.files;
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-        await wait(200);
-
-        // Verify selected file info box displays filename and size
-        assert(doc.getElementById('selectedPdfInfoBox').style.display === 'flex', 'Selected PDF info box is displayed');
-        assert(doc.getElementById('selectedPdfFileName').textContent === 'transformer_paper.pdf', 'Selected PDF filename displayed');
-
-        // Fill metadata
-        const uploadTitleInput = doc.getElementById('uploadPaperTitle');
-        const uploadAuthorsInput = doc.getElementById('uploadPaperAuthors');
-        const uploadYearInput = doc.getElementById('uploadPaperYear');
-        const uploadForm = doc.getElementById('addPaperUploadForm');
-
-        uploadTitleInput.value = 'Attention Is All You Need';
-        uploadAuthorsInput.value = 'Vaswani et al.';
-        uploadYearInput.value = '2017';
-
-        uploadForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-        await wait(600);
-
-        // Verify navigation to Note Editor and presence of "View Original PDF" in banner
-        assert(doc.getElementById('notesSection').classList.contains('active-view'), 'Navigated to Note Editor for uploaded PDF paper');
-        assert(doc.getElementById('notesPaperTitle').textContent === 'Attention Is All You Need', 'Paper title matches uploaded paper');
-        assert(doc.getElementById('notesPaperPdfWrap').style.display === 'inline-flex', 'View Original PDF button displayed in banner');
-
-        // UI Test 5: Navigate to My Papers and verify cards
-        const myPapersNav = doc.querySelector('[data-nav="papers"]');
-        myPapersNav.click();
+        navPapers.click();
         await wait(300);
+        const cards = Array.from(doc.querySelectorAll('#papersListContainer .paper-card'));
+        assert(cards.length === 2, 'My Papers displays 2 papers');
+        const resnetCard = cards.find(c => c.textContent.includes('ResNet'));
+        assert(resnetCard.textContent.includes('2 / 10') || resnetCard.textContent.includes('2/10'), 'My Papers progress reflects saved rich sections');
 
-        const paperCards = doc.querySelectorAll('#papersListContainer .paper-card');
-        assert(paperCards.length === 2, 'My Papers displays 2 papers');
-
-        // Paper with PDF must have "PDF Attached" badge and "View Original PDF" button
-        const cardWithPdf = Array.from(paperCards).find(c => c.textContent.includes('Attention Is All You Need'));
-        assert(cardWithPdf.querySelector('.badge-pdf') !== null, 'Card with PDF displays PDF Attached badge');
-        assert(cardWithPdf.querySelector('[data-action="view-original-pdf"]') !== null, 'Card with PDF displays View Original PDF button');
-
-        // Paper without PDF must NOT have View Original PDF button
-        const cardWithoutPdf = Array.from(paperCards).find(c => c.textContent.includes('ResNet'));
-        assert(cardWithoutPdf.querySelector('.badge-pdf') === null, 'Card without PDF has no PDF Attached badge');
-        assert(cardWithoutPdf.querySelector('[data-action="view-original-pdf"]') === null, 'Card without PDF has no View Original PDF button');
-
-        // UI Test 6: Navigate to Data Management
-        const dataNav = doc.querySelector('[data-nav="data"]');
-        assert(dataNav !== null, 'Data Management navigation link exists');
-        dataNav.click();
+        // E2E Test 8: Data Management Invalid ZIP Error UI + V2 Backup & Merge Conflict Selector UI
+        doc.querySelector('[data-nav="data"]').click();
         await wait(300);
-
         assert(doc.getElementById('dataSection').classList.contains('active-view'), 'Data Management section is active');
-        assert(doc.getElementById('exportFullZipBtn') !== null, 'Export Full Backup (.ZIP) button exists');
-        assert(doc.getElementById('exportNotesJsonBtn') !== null, 'Export Notes Only (.JSON) button exists');
-        assert(doc.getElementById('restoreZipDropzone') !== null, 'Restore ZIP dropzone exists');
 
-        // UI Test 7: Export Notes Only JSON click
+        const corruptZip = new File(['not a zip'], 'corrupt.zip', { type: 'application/zip' });
+        const dtCorrupt = new DataTransfer();
+        dtCorrupt.items.add(corruptZip);
+        const restoreInput = doc.getElementById('restoreZipFileInput');
+        restoreInput.files = dtCorrupt.files;
+        restoreInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(300);
+        assert(doc.getElementById('restoreZipError').style.display === 'block', 'Corrupted ZIP displays visible error alert in UI');
+
         doc.getElementById('exportNotesJsonBtn').click();
-        await wait(200);
+        await wait(150);
 
-        // Clean up: delete the test papers
-        myPapersNav.click();
-        await wait(200);
+        const liveZip = await win.ResearchMateDB.exportFullBackupZip();
+        const zipFile = new File([liveZip.blob], liveZip.filename, { type: 'application/zip' });
+        const dtZip = new DataTransfer();
+        dtZip.items.add(zipFile);
+        restoreInput.files = dtZip.files;
+        restoreInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(600);
 
-        const deleteBtns = doc.querySelectorAll('#papersListContainer [data-action="delete-paper"]');
-        for (const btn of deleteBtns) {
+        assert(doc.getElementById('restoreZipPreviewBox').style.display === 'block', 'Staged V2 ZIP preview displayed');
+        assert(doc.getElementById('restoreBackupMetaSummary').textContent.includes('1 Embedded Images'), 'Backup summary shows Embedded Images count');
+        const conflictSelects = doc.querySelectorAll('#restoreConflictsList .conflict-resolution-select');
+        assert(conflictSelects.length === 2, 'Merge conflict UI rendered per-paper resolution selectors');
+        conflictSelects[0].value = 'replace';
+        doc.querySelector('input[name="restoreMode"][value="merge"]').checked = true;
+        doc.getElementById('executeRestoreBtn').click();
+        await wait(700);
+
+        // E2E Test 9: Clean up all papers and confirm zero page/console exceptions
+        navPapers.click();
+        await wait(300);
+        const delBtns = doc.querySelectorAll('#papersListContainer [data-action="delete-paper"]');
+        for (const btn of delBtns) {
           btn.click();
           await wait(100);
-          const confirmBtn = doc.getElementById('confirmDeleteBtn');
-          confirmBtn.click();
+          doc.getElementById('confirmDeleteBtn').click();
           await wait(300);
         }
-
         assert(doc.querySelectorAll('#papersListContainer .paper-card').length === 0, 'All papers cleanly deleted');
+        assert(pageErrors.length === 0, `Zero uncaught runtime errors during E2E workflow (got ${pageErrors.length}: ${pageErrors.join('; ')})`);
 
-        log('=== ALL V1.1 E2E UI TESTS PASSED! ===', 'SUCCESS');
-        document.getElementById('testStatusBanner').innerText = 'ALL V1.1 E2E UI TESTS PASSED!';
+        log('=== ALL V1.2 E2E UI TESTS PASSED! ===', 'SUCCESS');
+        document.getElementById('testStatusBanner').innerText = 'ALL V1.2 E2E UI TESTS PASSED!';
 
         await fetch('/report_test_results', {
           method: 'POST',

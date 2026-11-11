@@ -51,7 +51,11 @@
       link.addEventListener('click', e => {
         e.preventDefault();
         const targetView = link.getAttribute('data-nav');
-        navigateTo(targetView);
+        if (currentView === 'notes' && window.NotesManager && typeof window.NotesManager.attemptNavigation === 'function') {
+          window.NotesManager.attemptNavigation(targetView);
+        } else {
+          navigateTo(targetView);
+        }
       });
     });
   }
@@ -169,7 +173,8 @@
       const stats = await window.ResearchMateDB.getDashboardStats();
       const summaryEl = document.getElementById('dataBackupStatsSummary');
       if (summaryEl) {
-        summaryEl.textContent = `${stats.totalPapers} Paper${stats.totalPapers === 1 ? '' : 's'} • ${stats.pdfCount || 0} Original PDF${(stats.pdfCount || 0) === 1 ? '' : 's'} • 10-Section Literature Review Notes`;
+        const imgs = stats.imageCount || 0;
+        summaryEl.textContent = `${stats.totalPapers} Paper${stats.totalPapers === 1 ? '' : 's'} • ${stats.pdfCount || 0} Original PDF${(stats.pdfCount || 0) === 1 ? '' : 's'} • ${imgs} Embedded Image${imgs === 1 ? '' : 's'}`;
       }
     } catch (err) {
       console.warn('Failed to update data management stats:', err);
@@ -286,7 +291,7 @@
 
       setTimeout(() => URL.revokeObjectURL(url), 60000);
 
-      showToast(`Backup exported: ${result.summary.totalPapers} papers, ${result.summary.totalPdfs} original PDFs.`, 'success', 5000);
+      showToast(`Backup exported: ${result.summary.totalPapers} papers, ${result.summary.totalPdfs} PDFs, ${result.summary.totalImages || 0} images.`, 'success', 5000);
       if (progressEl) {
         progressEl.textContent = '✓ Full backup package downloaded successfully.';
       }
@@ -375,22 +380,44 @@
 
       if (fileNameEl) fileNameEl.textContent = file.name;
       if (metaSummaryEl) {
-        metaSummaryEl.textContent = `${validated.papers.length} Papers • ${validated.notes.length} Review Notes • ${validated.pdfCount} Original PDF Documents`;
+        const imgsN = validated.imageCount || 0;
+        metaSummaryEl.textContent = `${validated.papers.length} Papers • ${validated.notes.length} Review Notes • ${validated.pdfCount} Original PDFs • ${imgsN} Embedded Images`;
       }
       if (dateEl) {
         const d = new Date(validated.backupInfo.createdAt);
-        dateEl.textContent = `Backup Date: ${d.toLocaleString()}`;
+        dateEl.textContent = `Backup Date: ${d.toLocaleString()} (Format v${validated.backupInfo.backupVersion})`;
       }
 
-      // Show conflict details if any
+      // Show conflict details and per-paper Merge resolution selector + integrity notices
       if (conflictsWarning && conflictsList) {
-        if (validated.conflicts && validated.conflicts.length > 0) {
+        const notices = [];
+        if (validated.missingPdfs && validated.missingPdfs.length > 0) {
+          notices.push(`<div class="conflict-warning-note">Notice: ${validated.missingPdfs.length} paper(s) marked with PDFs are missing binary files in <code>original-pdfs/</code> and will restore without PDF attachment.</div>`);
+        }
+        if (validated.missingImages && validated.missingImages.length > 0) {
+          notices.push(`<div class="conflict-warning-note">Notice: ${validated.missingImages.length} embedded image reference(s) are missing binary files in <code>images/</code>.</div>`);
+        }
+
+        if ((validated.conflicts && validated.conflicts.length > 0) || notices.length > 0) {
           conflictsWarning.style.display = 'block';
-          conflictsList.innerHTML = validated.conflicts.map(c => `
+          const conflictHtml = (validated.conflicts || []).map(c => `
             <div class="conflict-item">
-              <strong>ID:</strong> ${c.id} — <em>"${escapeHtml(c.backupTitle)}"</em>
+              <div class="conflict-item-meta">
+                <div><strong>${escapeHtml(c.backupTitle)}</strong></div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                  Existing: ${escapeHtml(c.existingTitle || c.id)} • Backup ID: <code>${escapeHtml(c.id)}</code>
+                </div>
+              </div>
+              <div class="conflict-item-action">
+                <label style="font-size: 0.75rem; color: var(--text-secondary);">Merge Action:</label>
+                <select class="form-input form-input-compact conflict-resolution-select" data-conflict-id="${escapeHtml(c.id)}">
+                  <option value="keep" selected>Keep Existing</option>
+                  <option value="replace">Replace with Backup</option>
+                </select>
+              </div>
             </div>
           `).join('');
+          conflictsList.innerHTML = notices.join('') + conflictHtml;
         } else {
           conflictsWarning.style.display = 'none';
           conflictsList.innerHTML = '';
@@ -400,8 +427,8 @@
       showToast('Backup archive validated successfully.', 'success');
     } catch (err) {
       console.error('Backup validation error:', err);
-      showError(errorEl, err.message || 'Validation failed. The ZIP file is not a valid ResearchMate backup.');
       clearStagedBackup();
+      showError(errorEl, err.message || 'Validation failed. The ZIP file is not a valid ResearchMate backup.');
     }
   }
 
@@ -417,6 +444,17 @@
     if (dropzone) dropzone.style.display = 'flex';
     if (previewBox) previewBox.style.display = 'none';
     if (errorEl) errorEl.style.display = 'none';
+  }
+
+  function collectConflictResolutionSelections() {
+    const map = {};
+    document.querySelectorAll('.conflict-resolution-select').forEach(sel => {
+      const id = sel.getAttribute('data-conflict-id');
+      if (id) {
+        map[id] = sel.value === 'replace' ? 'replace' : 'keep';
+      }
+    });
+    return map;
   }
 
   /**
@@ -436,22 +474,24 @@
       const modal = document.getElementById('replaceConfirmModal');
       const summaryEl = document.getElementById('replaceModalSummary');
       if (summaryEl) {
-        summaryEl.textContent = `Your current library will be erased and replaced with ${stagedZipBackup.papers.length} papers, ${stagedZipBackup.notes.length} literature review notes, and ${stagedZipBackup.pdfCount} original PDFs.`;
+        const imgsN = stagedZipBackup.imageCount || 0;
+        summaryEl.textContent = `Your current library will be erased and replaced with ${stagedZipBackup.papers.length} papers, ${stagedZipBackup.notes.length} literature review notes, ${stagedZipBackup.pdfCount} original PDFs, and ${imgsN} embedded images.`;
       }
       if (modal) {
         modal.classList.add('active');
         modal.setAttribute('aria-hidden', 'false');
       }
     } else {
-      // Merge mode proceeds immediately
-      await performRestoreExecution('merge');
+      // Merge mode proceeds with selected per-conflict resolution choices
+      const resolutionMap = collectConflictResolutionSelections();
+      await performRestoreExecution('merge', resolutionMap);
     }
   }
 
   /**
    * Executes database restore transaction and updates UI.
    */
-  async function performRestoreExecution(mode) {
+  async function performRestoreExecution(mode, conflictResolution = {}) {
     if (!stagedZipBackup) return;
 
     const executeBtn = document.getElementById('executeRestoreBtn');
@@ -471,7 +511,7 @@
       const result = await window.ResearchMateDB.restoreZipBackup(
         stagedZipBackup,
         mode,
-        {},
+        conflictResolution,
         (pct, msg) => {
           if (progressEl) progressEl.textContent = msg;
         }
@@ -479,7 +519,11 @@
 
       clearStagedBackup();
 
-      showToast(`Restore complete! ${result.restoredPapers} papers, ${result.restoredNotes} notes, and ${result.restoredPdfs} PDFs imported.`, 'success', 5000);
+      showToast(
+        `Restore complete! ${result.restoredPapers} papers, ${result.restoredNotes} notes, ${result.restoredPdfs} PDFs, and ${result.restoredImages || 0} images imported.`,
+        'success',
+        5000
+      );
 
       // Refresh application data
       await window.PapersManager.loadPapers();
@@ -515,6 +559,7 @@
       modal.classList.remove('active');
       modal.setAttribute('aria-hidden', 'true');
     });
+    document.body.style.overflow = '';
   }
 
   /**
