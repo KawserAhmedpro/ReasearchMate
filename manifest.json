@@ -1,0 +1,17 @@
+{
+  "name": "ResearchMate — Personal Literature Review Notebook",
+  "short_name": "ResearchMate",
+  "description": "Minimal, personal research paper literature review notebook with PDF upload and offline backups.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fbfbfb",
+  "theme_color": "#1e40af",
+  "icons": [
+    {
+      "src": "assets/icons/book.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
