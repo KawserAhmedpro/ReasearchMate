@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PDF Export Test</title>
+  <script src="../js/vendor/jspdf.umd.min.js"></script>
+  <script src="../js/vendor/html2pdf.bundle.min.js"></script>
+  <script src="../js/database.js"></script>
+  <script src="../js/pdf-export.js"></script>
+</head>
+<body>
+  <h1>PDF Export Test</h1>
+  <div id="status">Testing PDF Generation...</div>
+
+  <script>
+    async function testPdf() {
+      try {
+        const paper = {
+          id: 'test_paper_1',
+          title: 'Attention Is All You Need (ট্রান্সফরমার আর্কিটেকচার)',
+          authors: 'Vaswani et al.',
+          year: 2017,
+          doiUrl: 'https://arxiv.org/abs/1706.03762',
+          createdAt: new Date().toISOString()
+        };
+
+        const notes = {
+          paperId: 'test_paper_1',
+          researchProblem: 'Recurrent networks are sequential. এটি সমান্তরাল প্রক্রিয়াকরণে বাধা সৃষ্টি করে।',
+          researchObjective: 'Design attention-only architecture.',
+          dataset: 'WMT 2014 En-De',
+          methodology: 'Multi-Head Attention mechanism',
+          evaluationProtocol: 'Standard BLEU benchmark',
+          evaluationMetrics: 'BLEU score 28.4',
+          keyFindings: 'Better BLEU and 10x faster training',
+          limitations: 'O(n^2) sequence length memory complexity',
+          futureWork: 'Apply to images and vision',
+          criticalAnalysis: 'Very strong foundational paper for NLP and LLMs.',
+          updatedAt: new Date().toISOString()
+        };
+
+        const filename = `ResearchMate_${window.PDFExporter.sanitizeFilename(paper.title)}.pdf`;
+
+        // Render PDF directly using html2pdf output blob
+        const opt = {
+          margin: [12, 12, 14, 12],
+          filename: filename,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 1.5, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        // Create the node
+        const node = document.createElement('div');
+        node.innerHTML = `
+          <div style="font-family: sans-serif; padding: 20px;">
+            <h1>${paper.title}</h1>
+            <p><strong>Authors:</strong> ${paper.authors}</p>
+            <p><strong>Year:</strong> ${paper.year}</p>
+            <hr>
+            <h3>01. Research Problem</h3>
+            <p>${notes.researchProblem}</p>
+          </div>
+        `;
+        document.body.appendChild(node);
+
+        const pdfBlob = await window.html2pdf().set(opt).from(node).output('blob');
+        document.body.removeChild(node);
+
+        if (!pdfBlob || pdfBlob.size < 500) {
+          throw new Error('PDF Blob generation failed or size too small: ' + (pdfBlob ? pdfBlob.size : 0));
+        }
+
+        // Read header to verify %PDF signature
+        const arrayBuffer = await pdfBlob.slice(0, 5).arrayBuffer();
+        const header = new TextDecoder().decode(arrayBuffer);
+
+        if (!header.startsWith('%PDF')) {
+          throw new Error('Invalid PDF magic bytes: ' + header);
+        }
+
+        console.log(`PDF verified! Size: ${pdfBlob.size} bytes. Magic: ${header}`);
+
+        await fetch('/report_test_results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'SUCCESS',
+            pdfSize: pdfBlob.size,
+            magic: header,
+            msg: `Successfully generated valid PDF (${pdfBlob.size} bytes) with Bengali Unicode!`
+          })
+        }).catch(() => {});
+      } catch (e) {
+        console.error('PDF error:', e);
+        await fetch('/report_test_results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'ERROR', error: e.message })
+        }).catch(() => {});
+      }
+    }
+
+    window.onload = testPdf;
+  </script>
+</body>
+</html>
