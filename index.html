@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="ResearchMate - A minimal, lightweight personal research paper literature review notebook for organizing academic reading notes.">
+  <meta name="description" content="ResearchMate V1.1 - A minimal, lightweight personal research paper literature review notebook with PDF upload and complete backup/restore.">
   <title>ResearchMate — Personal Literature Review Notebook</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e40af' stroke-width='2'><path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'></path><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'></path></svg>">
@@ -33,10 +33,11 @@
       <nav class="nav-links" aria-label="Main Navigation">
         <a href="#dashboard" class="nav-link active" data-nav="dashboard">Dashboard</a>
         <a href="#papers" class="nav-link" data-nav="papers">My Papers</a>
+        <a href="#data" class="nav-link" data-nav="data">Data Management</a>
       </nav>
 
       <div class="header-actions">
-        <button type="button" class="btn btn-primary btn-sm" data-action="open-add-paper-modal" title="Add a new academic paper">
+        <button type="button" class="btn btn-primary btn-sm" data-action="open-add-paper-modal" title="Add or upload an academic paper">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -60,8 +61,8 @@
         <div class="dashboard-hero-content">
           <h1 id="dashboardHeroTitle">Literature Review Notebook</h1>
           <p>
-            Record structured notes across 10 core dimensions while reading academic papers externally.
-            Review, update, and export individual PDFs anytime.
+            Add research papers, upload original PDFs, record structured notes across 10 core dimensions,
+            and export or backup your entire library anytime.
           </p>
         </div>
         <div class="dashboard-hero-actions">
@@ -72,6 +73,10 @@
             </svg>
             Add New Paper
           </button>
+          <a href="#data" class="btn btn-secondary btn-sm" data-nav="data">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Backup &amp; Restore
+          </a>
         </div>
       </div>
 
@@ -81,6 +86,11 @@
           <span class="stat-card-label">Total Papers</span>
           <span class="stat-card-value" id="statTotalPapers">0</span>
           <span class="stat-card-desc">Papers in local library</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-label">PDFs Attached</span>
+          <span class="stat-card-value" id="statPdfCount">0</span>
+          <span class="stat-card-desc">Original papers stored</span>
         </div>
         <div class="stat-card">
           <span class="stat-card-label">Completed Reviews</span>
@@ -125,7 +135,7 @@
           </div>
           <h3 class="empty-state-title">No research papers added yet</h3>
           <p class="empty-state-text">
-            Start your personal research literature review by adding the first paper you are reading.
+            Start your personal research literature review by adding a paper manually or uploading its original PDF.
           </p>
           <button type="button" class="btn btn-primary" data-action="open-add-paper-modal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -208,7 +218,7 @@
         </div>
         <h3 class="empty-state-title">Your literature review notebook is empty</h3>
         <p class="empty-state-text">
-          Add research papers to take structured notes, track research gaps, and export individual PDFs.
+          Add research papers manually or upload original PDFs to start recording your literature reviews.
         </p>
         <button type="button" class="btn btn-primary" data-action="open-add-paper-modal">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -270,7 +280,7 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Download PDF
+            Download Notes PDF
           </button>
 
           <button type="button" class="btn btn-primary btn-sm" id="saveNotesBtn" title="Save Literature Review Notes (Ctrl+S)">
@@ -336,6 +346,14 @@
             </svg>
             <a href="#" target="_blank" rel="noopener noreferrer" id="notesPaperDoiLink" class="paper-doi-link">DOI/URL</a>
           </div>
+
+          <!-- Original PDF Action in Banner (V1.1) -->
+          <div class="info-item" id="notesPaperPdfWrap" style="display: none;">
+            <button type="button" class="btn btn-secondary btn-sm" id="notesViewOriginalPdfBtn" style="padding: 0.2rem 0.55rem; font-size: 0.8125rem;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              View Original PDF ↗
+            </button>
+          </div>
         </div>
       </div>
 
@@ -377,10 +395,152 @@
 
     </section>
 
+    <!-- ----------------------------------------------------------------------
+         Section D: Data Management (Backup & Restore - V1.1)
+         ---------------------------------------------------------------------- -->
+    <section id="dataSection" class="app-view" aria-labelledby="dataSectionTitle">
+      <div class="section-header-row">
+        <div>
+          <h1 id="dataSectionTitle" class="section-title">Data Management</h1>
+          <p class="section-subtitle" id="dataBackupStatsSummary">Export backups, restore previous archives, or save lightweight notes JSON</p>
+        </div>
+      </div>
+
+      <div class="data-mgmt-grid">
+
+        <!-- Option 1: Full Backup (ZIP) -->
+        <div class="data-mgmt-card">
+          <div>
+            <div class="data-mgmt-card-header">
+              <div class="data-mgmt-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              </div>
+              <div>
+                <h3 class="data-mgmt-title">1. Export Full Backup (.ZIP)</h3>
+                <span class="badge badge-year">Complete Archive</span>
+              </div>
+            </div>
+            <p class="data-mgmt-desc">
+              Exports a complete backup containing all research paper metadata, all 10 literature review note sections,
+              and all uploaded original PDF documents into a single portable ZIP archive.
+            </p>
+          </div>
+          <div>
+            <button type="button" class="btn btn-primary" id="exportFullZipBtn" style="width: 100%;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download Full Backup (.ZIP)
+            </button>
+            <div id="exportZipProgress" class="data-mgmt-progress"></div>
+          </div>
+        </div>
+
+        <!-- Option 2: Restore from Backup (ZIP) -->
+        <div class="data-mgmt-card" style="grid-column: span 1 / -1;">
+          <div>
+            <div class="data-mgmt-card-header">
+              <div class="data-mgmt-icon" style="color: var(--success); background-color: var(--success-bg); border-color: var(--success-border);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              </div>
+              <div>
+                <h3 class="data-mgmt-title">2. Import / Restore Backup (.ZIP)</h3>
+                <span class="badge badge-year">Merge or Replace</span>
+              </div>
+            </div>
+            <p class="data-mgmt-desc">
+              Select a previously exported ResearchMate ZIP backup archive. The application will validate the archive structure,
+              inspect the papers, notes, and PDF files, and allow you to safely merge or replace your library.
+            </p>
+
+            <div id="restoreZipError" class="form-error-alert" role="alert"></div>
+
+            <!-- ZIP Dropzone -->
+            <div id="restoreZipDropzone" class="pdf-dropzone" tabindex="0" role="button" aria-label="Drop ResearchMate ZIP backup archive here">
+              <div class="dropzone-icon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              </div>
+              <div class="dropzone-text">Click or drag &amp; drop a ResearchMate_Backup_*.zip file here</div>
+              <div class="dropzone-hint">Validated client-side before any changes are made to your local database</div>
+            </div>
+            <input type="file" id="restoreZipFileInput" accept=".zip,application/zip" style="display: none;">
+
+            <!-- Staged Backup Inspection Preview Box -->
+            <div id="restoreZipPreviewBox" style="display: none; background: #fafbfc; border: 1px solid var(--border-medium); border-radius: var(--radius-lg); padding: 1.25rem; margin-bottom: 1.25rem;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                <div>
+                  <h4 id="restoreBackupFileName" style="font-size: 1rem; font-weight: 700; color: var(--text-primary);"></h4>
+                  <p id="restoreBackupMetaSummary" style="font-size: 0.8125rem; font-weight: 600; color: var(--accent-primary); margin-top: 0.2rem;"></p>
+                  <p id="restoreBackupDate" style="font-size: 0.75rem; color: var(--text-muted);"></p>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="clearStagedBackupBtn">Select Different File</button>
+              </div>
+
+              <!-- Conflicts Warning -->
+              <div id="restoreConflictsWarning" class="conflicts-box">
+                <strong>Notice:</strong> One or more paper IDs in this backup match papers already present in your local library.
+                <div id="restoreConflictsList"></div>
+              </div>
+
+              <!-- Restore Mode Selection -->
+              <div class="restore-mode-options">
+                <label class="radio-card">
+                  <input type="radio" name="restoreMode" value="merge" checked>
+                  <div>
+                    <div class="radio-label-title">Mode A: Merge with Existing Data (Safe)</div>
+                    <div class="radio-label-desc">Adds new papers, notes, and PDFs from the backup without overwriting your other existing research notes.</div>
+                  </div>
+                </label>
+                <label class="radio-card">
+                  <input type="radio" name="restoreMode" value="replace">
+                  <div>
+                    <div class="radio-label-title" style="color: var(--danger);">Mode B: Replace All Existing Data</div>
+                    <div class="radio-label-desc">Erases all current local papers, notes, and PDFs, and restores the backup archive. Requires confirmation.</div>
+                  </div>
+                </label>
+              </div>
+
+              <div id="restoreProgressStatus" class="data-mgmt-progress"></div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+                <button type="button" class="btn btn-primary" id="executeRestoreBtn">
+                  Restore Library Now
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Option 3: Export Notes Only (JSON) -->
+        <div class="data-mgmt-card">
+          <div>
+            <div class="data-mgmt-card-header">
+              <div class="data-mgmt-icon" style="color: var(--warning); background-color: var(--warning-bg); border-color: var(--warning-border);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              </div>
+              <div>
+                <h3 class="data-mgmt-title">3. Export Notes Only (.JSON)</h3>
+                <span class="badge badge-year">Lightweight Backup</span>
+              </div>
+            </div>
+            <p class="data-mgmt-desc">
+              Exports a lightweight JSON file containing all bibliographic paper information and 10-section literature review notes (no PDF files attached).
+            </p>
+          </div>
+          <div>
+            <button type="button" class="btn btn-secondary" id="exportNotesJsonBtn" style="width: 100%;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download Notes Only (.JSON)
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
   </main>
 
   <!-- ========================================================================
-       Modal 1: Add New Research Paper
+       Modal 1: Add New Research Paper (Two Methods: Manual or PDF Upload)
        ======================================================================== -->
   <div id="addPaperModal" class="modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="addPaperModalTitle">
     <div class="modal-card">
@@ -394,84 +554,210 @@
         </button>
       </div>
 
-      <form id="addPaperForm">
-        <div class="modal-body">
-          <div id="addPaperError" class="form-error-alert" role="alert"></div>
+      <div class="modal-body">
+        <!-- Segmented Control for Two Creation Methods -->
+        <div class="segmented-control" role="tablist">
+          <button type="button" class="segmented-btn active" id="tabAddManualBtn" role="tab" aria-selected="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            Add Manually
+          </button>
+          <button type="button" class="segmented-btn" id="tabAddUploadBtn" role="tab" aria-selected="false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+            Upload Research Paper PDF
+          </button>
+        </div>
 
-          <div class="form-group">
-            <label for="paperTitleInput" class="form-label">
-              Paper Title<span class="required-star">*</span>
-            </label>
-            <input
-              type="text"
-              id="paperTitleInput"
-              class="form-input"
-              placeholder="e.g. Attention Is All You Need"
-              required
-              autocomplete="off"
-            >
-          </div>
+        <!-- ------------------------------------------------------------------
+             Tab 1: Add Paper Manually (Preserved Original Workflow)
+             ------------------------------------------------------------------ -->
+        <div id="addManualTabContent">
+          <form id="addPaperManualForm">
+            <div id="addPaperError" class="form-error-alert" role="alert"></div>
 
-          <div class="form-group">
-            <label for="paperAuthorsInput" class="form-label">
-              Author(s)<span class="required-star">*</span>
-            </label>
-            <input
-              type="text"
-              id="paperAuthorsInput"
-              class="form-input"
-              placeholder="e.g. Vaswani et al."
-              required
-              autocomplete="off"
-            >
-            <p class="form-hint">List authors or primary author with et al.</p>
-          </div>
-
-          <div class="form-group">
-            <label for="paperYearInput" class="form-label">
-              Publication Year <span style="font-weight: 400; color: var(--text-muted);">(optional)</span>
-            </label>
-            <input
-              type="number"
-              id="paperYearInput"
-              class="form-input"
-              placeholder="e.g. 2017"
-              min="1500"
-              max="2035"
-            >
-          </div>
-
-          <div class="form-group">
-            <label for="paperDoiInput" class="form-label">
-              DOI / Paper URL <span style="font-weight: 400; color: var(--text-muted);">(optional)</span>
-            </label>
-            <input
-              type="url"
-              id="paperDoiInput"
-              class="form-input"
-              placeholder="https://doi.org/... or arXiv link"
-            >
-            <p class="form-hint">Convenience link to access the original publication externally.</p>
-          </div>
-
-          <div class="immutability-notice">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            <div>
-              <strong>Note:</strong> Paper bibliographic details are permanent once saved.
-              You will independently write, edit, and update your literature review notes anytime.
+            <div class="form-group">
+              <label for="paperTitleInput" class="form-label">
+                Paper Title<span class="required-star">*</span>
+              </label>
+              <input
+                type="text"
+                id="paperTitleInput"
+                class="form-input"
+                placeholder="e.g. Attention Is All You Need"
+                required
+                autocomplete="off"
+              >
             </div>
-          </div>
+
+            <div class="form-group">
+              <label for="paperAuthorsInput" class="form-label">
+                Author(s)<span class="required-star">*</span>
+              </label>
+              <input
+                type="text"
+                id="paperAuthorsInput"
+                class="form-input"
+                placeholder="e.g. Vaswani et al."
+                required
+                autocomplete="off"
+              >
+              <p class="form-hint">List authors or primary author with et al.</p>
+            </div>
+
+            <div class="form-group">
+              <label for="paperYearInput" class="form-label">
+                Publication Year <span style="font-weight: 400; color: var(--text-muted);">(optional)</span>
+              </label>
+              <input
+                type="number"
+                id="paperYearInput"
+                class="form-input"
+                placeholder="e.g. 2017"
+                min="1500"
+                max="2035"
+              >
+            </div>
+
+            <div class="form-group">
+              <label for="paperDoiInput" class="form-label">
+                DOI / Paper URL <span style="font-weight: 400; color: var(--text-muted);">(optional)</span>
+              </label>
+              <input
+                type="url"
+                id="paperDoiInput"
+                class="form-input"
+                placeholder="https://doi.org/... or arXiv link"
+              >
+              <p class="form-hint">Convenience link to access original publication externally.</p>
+            </div>
+
+            <div class="immutability-notice">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <div>
+                <strong>Fixed Bibliographic Record:</strong> Paper information is fixed once saved.
+                You independently write, edit, and update your literature review notes anytime.
+              </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 1rem 0 0 0; background: none; border-top: none;">
+              <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Add Paper</button>
+            </div>
+          </form>
         </div>
 
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add Paper</button>
+        <!-- ------------------------------------------------------------------
+             Tab 2: Upload Research Paper PDF (New Method V1.1)
+             ------------------------------------------------------------------ -->
+        <div id="addUploadTabContent" style="display: none;">
+          <form id="addPaperUploadForm">
+            <div id="addPaperUploadError" class="form-error-alert" role="alert"></div>
+
+            <!-- PDF Dropzone -->
+            <div id="pdfDropzone" class="pdf-dropzone" tabindex="0" role="button" aria-label="Drop research paper PDF here">
+              <div class="dropzone-icon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+              </div>
+              <div class="dropzone-text">Click or drag &amp; drop research paper PDF here</div>
+              <div class="dropzone-hint">PDF documents only. Stored locally in your browser's IndexedDB.</div>
+            </div>
+            <input type="file" id="paperPdfFileInput" accept=".pdf,application/pdf" style="display: none;">
+
+            <!-- Selected PDF File Box -->
+            <div id="selectedPdfInfoBox" class="selected-pdf-info">
+              <div class="selected-pdf-details">
+                <div class="selected-pdf-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                </div>
+                <div>
+                  <div id="selectedPdfFileName" class="selected-pdf-name"></div>
+                  <div id="selectedPdfFileSize" class="selected-pdf-size"></div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" id="removeSelectedPdfBtn">Replace PDF</button>
+            </div>
+
+            <!-- Extraction status -->
+            <div id="pdfExtractStatus" class="extract-status-box"></div>
+
+            <!-- Metadata Fields (Manual Entry / Verification) -->
+            <div class="form-group">
+              <label for="uploadPaperTitle" class="form-label">
+                Paper Title<span class="required-star">*</span>
+              </label>
+              <input
+                type="text"
+                id="uploadPaperTitle"
+                class="form-input"
+                placeholder="Paper title"
+                required
+                autocomplete="off"
+              >
+            </div>
+
+            <div class="form-group">
+              <label for="uploadPaperAuthors" class="form-label">
+                Author(s)<span class="required-star">*</span>
+              </label>
+              <input
+                type="text"
+                id="uploadPaperAuthors"
+                class="form-input"
+                placeholder="Author names"
+                required
+                autocomplete="off"
+              >
+            </div>
+
+            <div class="form-group">
+              <label for="uploadPaperYear" class="form-label">
+                Publication Year <span style="font-weight: 400; color: var(--text-muted);">(optional)</span>
+              </label>
+              <input
+                type="number"
+                id="uploadPaperYear"
+                class="form-input"
+                placeholder="e.g. 2024"
+                min="1500"
+                max="2035"
+              >
+            </div>
+
+            <div class="form-group">
+              <label for="uploadPaperDoi" class="form-label">
+                DOI / Paper URL <span style="font-weight: 400; color: var(--text-muted);">(optional)</span>
+              </label>
+              <input
+                type="url"
+                id="uploadPaperDoi"
+                class="form-input"
+                placeholder="https://doi.org/... or arXiv link"
+              >
+            </div>
+
+            <div class="immutability-notice">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <div>
+                <strong>Fixed Record &amp; PDF:</strong> Bibliographic metadata and the original PDF file are permanent once saved.
+                You can view the original PDF and update your literature review notes anytime.
+              </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 1rem 0 0 0; background: none; border-top: none;">
+              <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save Paper &amp; PDF</button>
+            </div>
+          </form>
         </div>
-      </form>
+
+      </div>
     </div>
   </div>
 
@@ -481,7 +767,7 @@
   <div id="deleteConfirmModal" class="modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="deleteModalTitle">
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="deleteModalTitle" class="modal-title" style="color: var(--danger);">Delete Paper &amp; Notes</h2>
+        <h2 id="deleteModalTitle" class="modal-title" style="color: var(--danger);">Delete Paper, Notes &amp; PDF</h2>
         <button type="button" class="modal-close-btn" data-action="close-modal" aria-label="Close modal">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -492,18 +778,50 @@
 
       <div class="modal-body">
         <p style="margin-bottom: 0.75rem; color: var(--text-primary);">
-          Are you sure you want to permanently delete this research paper and all 10 literature review note sections?
+          Are you sure you want to permanently delete this research paper, all 10 literature review note sections, and any attached original PDF?
         </p>
         <p id="deletePaperTitlePreview" style="font-weight: 600; font-size: 0.9375rem; color: var(--text-primary); padding: 0.75rem; background-color: var(--bg-subtle); border-radius: var(--radius-md); border: 1px solid var(--border-light); margin-bottom: 0.75rem; word-break: break-word;">
         </p>
         <p style="font-size: 0.8125rem; color: var(--danger); font-weight: 500;">
-          This action cannot be undone. All saved review notes for this paper will be deleted from your browser's local database.
+          This action cannot be undone. All records will be removed from your browser's local database.
         </p>
       </div>
 
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
         <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete Paper &amp; Notes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Modal 3: Replace All Data Warning Modal (V1.1)
+       ======================================================================== -->
+  <div id="replaceConfirmModal" class="modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="replaceModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="replaceModalTitle" class="modal-title" style="color: var(--danger);">Replace All Existing Library Data?</h2>
+        <button type="button" class="modal-close-btn" data-action="close-modal" aria-label="Close modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size: 0.9375rem; font-weight: 600; color: var(--danger); margin-bottom: 0.75rem;">
+          Warning: This action will completely erase your existing ResearchMate local library!
+        </p>
+        <p id="replaceModalSummary" style="font-size: 0.875rem; color: var(--text-primary); margin-bottom: 1rem; line-height: 1.5;"></p>
+        <p style="font-size: 0.8125rem; color: var(--text-muted);">
+          All current papers, literature review notes, and uploaded PDF files will be replaced with the contents of the imported backup archive.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmReplaceRestoreBtn">Yes, Replace All Data</button>
       </div>
     </div>
   </div>
@@ -516,6 +834,7 @@
   <!-- ========================================================================
        Vendor Scripts (Local first with offline resilience)
        ======================================================================== -->
+  <script src="js/vendor/jszip.min.js"></script>
   <script src="js/vendor/jspdf.umd.min.js"></script>
   <script src="js/vendor/html2pdf.bundle.min.js"></script>
 
@@ -530,4 +849,3 @@
 
 </body>
 </html>
-

@@ -1,6 +1,7 @@
 /**
- * app.js - Main Application Coordinator for ResearchMate
- * Manages view routing, navigation, dashboard statistics, and toast feedback.
+ * app.js - Main Application Coordinator for ResearchMate (V1.1)
+ * Manages view routing, navigation, dashboard statistics, toast feedback,
+ * and the complete Data Management system (Full ZIP backup, ZIP restore, and JSON notes export).
  */
 
 (function () {
@@ -8,13 +9,14 @@
 
   let currentView = 'dashboard';
   let toastTimeout = null;
+  let stagedZipBackup = null; // Holds validated backup for restore
 
   /**
    * Initializes application on DOMContentLoaded.
    */
   async function init() {
     try {
-      // 1. Initialize IndexedDB
+      // 1. Initialize / Upgrade IndexedDB
       await window.ResearchMateDB.initDB();
 
       // 2. Setup modules
@@ -24,11 +26,14 @@
       // 3. Setup Navigation & Routing
       setupNavigation();
 
-      // 4. Initial Data Load
+      // 4. Setup Data Management listeners (V1.1)
+      setupDataManagement();
+
+      // 5. Initial Data Load
       await window.PapersManager.loadPapers();
       await updateDashboard();
 
-      // 5. Handle Initial Route from URL Hash
+      // 6. Handle Initial Route from URL Hash
       handleHashChange();
 
       window.addEventListener('hashchange', handleHashChange);
@@ -94,6 +99,9 @@
     } else if (viewName === 'papers') {
       window.location.hash = '#papers';
       window.PapersManager.renderMyPapers();
+    } else if (viewName === 'data') {
+      window.location.hash = '#data';
+      updateDataManagementStats();
     } else if (viewName === 'notes') {
       const paperId = window.NotesManager ? window.NotesManager.getCurrentPaperId() : null;
       if (paperId) {
@@ -124,6 +132,8 @@
 
     if (hash === '#papers') {
       navigateTo('papers', { skipUnsavedCheck: true });
+    } else if (hash === '#data') {
+      navigateTo('data', { skipUnsavedCheck: true });
     } else {
       navigateTo('dashboard', { skipUnsavedCheck: true });
     }
@@ -139,20 +149,376 @@
       const totalCountEl = document.getElementById('statTotalPapers');
       const completedCountEl = document.getElementById('statCompletedNotes');
       const inProgressCountEl = document.getElementById('statInProgressNotes');
+      const pdfCountEl = document.getElementById('statPdfCount');
 
       if (totalCountEl) totalCountEl.textContent = stats.totalPapers;
       if (completedCountEl) completedCountEl.textContent = stats.completedNotes;
       if (inProgressCountEl) inProgressCountEl.textContent = stats.inProgressNotes;
+      if (pdfCountEl) pdfCountEl.textContent = stats.pdfCount || 0;
     } catch (err) {
       console.error('Failed to update dashboard stats:', err);
     }
   }
 
+  /* ========================================================================
+     Data Management Features (V1.1)
+     ======================================================================== */
+
+  async function updateDataManagementStats() {
+    try {
+      const stats = await window.ResearchMateDB.getDashboardStats();
+      const summaryEl = document.getElementById('dataBackupStatsSummary');
+      if (summaryEl) {
+        summaryEl.textContent = `${stats.totalPapers} Paper${stats.totalPapers === 1 ? '' : 's'} • ${stats.pdfCount || 0} Original PDF${(stats.pdfCount || 0) === 1 ? '' : 's'} • 10-Section Literature Review Notes`;
+      }
+    } catch (err) {
+      console.warn('Failed to update data management stats:', err);
+    }
+  }
+
+  function setupDataManagement() {
+    // 1. Export Full Backup (ZIP)
+    const exportZipBtn = document.getElementById('exportFullZipBtn');
+    if (exportZipBtn) {
+      exportZipBtn.addEventListener('click', handleExportFullBackupZip);
+    }
+
+    // 2. Export Notes Only (JSON)
+    const exportNotesBtn = document.getElementById('exportNotesJsonBtn');
+    if (exportNotesBtn) {
+      exportNotesBtn.addEventListener('click', handleExportNotesOnlyJson);
+    }
+
+    // 3. Restore ZIP File Picker & Dropzone
+    const restoreInput = document.getElementById('restoreZipFileInput');
+    const restoreDropzone = document.getElementById('restoreZipDropzone');
+
+    if (restoreDropzone && restoreInput) {
+      restoreDropzone.addEventListener('click', () => restoreInput.click());
+
+      ['dragenter', 'dragover'].forEach(name => {
+        restoreDropzone.addEventListener(name, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          restoreDropzone.classList.add('drag-active');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(name => {
+        restoreDropzone.addEventListener(name, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          restoreDropzone.classList.remove('drag-active');
+        });
+      });
+
+      restoreDropzone.addEventListener('drop', e => {
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          handleRestoreFileSelected(files[0]);
+        }
+      });
+
+      restoreInput.addEventListener('change', e => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleRestoreFileSelected(e.target.files[0]);
+        }
+      });
+    }
+
+    // Clear staged backup button
+    const clearStagedBtn = document.getElementById('clearStagedBackupBtn');
+    if (clearStagedBtn) {
+      clearStagedBtn.addEventListener('click', () => clearStagedBackup());
+    }
+
+    // Execute Restore Button
+    const executeRestoreBtn = document.getElementById('executeRestoreBtn');
+    if (executeRestoreBtn) {
+      executeRestoreBtn.addEventListener('click', handleExecuteRestore);
+    }
+
+    // Replace Warning Modal Confirm Button
+    const confirmReplaceBtn = document.getElementById('confirmReplaceRestoreBtn');
+    if (confirmReplaceBtn) {
+      confirmReplaceBtn.addEventListener('click', () => {
+        closeAllModals();
+        performRestoreExecution('replace');
+      });
+    }
+  }
+
+  /**
+   * Action 1: Export Complete Full Backup (ZIP)
+   */
+  async function handleExportFullBackupZip() {
+    const btn = document.getElementById('exportFullZipBtn');
+    const progressEl = document.getElementById('exportZipProgress');
+    const origHtml = btn ? btn.innerHTML : '';
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `
+          <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+          Exporting Backup ZIP...
+        `;
+      }
+      if (progressEl) {
+        progressEl.style.display = 'block';
+        progressEl.textContent = 'Preparing backup archive...';
+      }
+
+      showToast('Generating complete ZIP backup...', 'info');
+
+      const result = await window.ResearchMateDB.exportFullBackupZip((pct, msg) => {
+        if (progressEl) progressEl.textContent = msg;
+      });
+
+      // Trigger browser download
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+      showToast(`Backup exported: ${result.summary.totalPapers} papers, ${result.summary.totalPdfs} original PDFs.`, 'success', 5000);
+      if (progressEl) {
+        progressEl.textContent = '✓ Full backup package downloaded successfully.';
+      }
+    } catch (err) {
+      console.error('Failed to export ZIP backup:', err);
+      showToast('Failed to generate ZIP backup: ' + err.message, 'error', 5000);
+      if (progressEl) {
+        progressEl.textContent = 'Export failed: ' + err.message;
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  /**
+   * Action 2: Export Notes Only (JSON)
+   */
+  async function handleExportNotesOnlyJson() {
+    const btn = document.getElementById('exportNotesJsonBtn');
+    const origHtml = btn ? btn.innerHTML : '';
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = 'Exporting Notes...';
+      }
+
+      const { jsonString, filename } = await window.ResearchMateDB.exportNotesOnlyJson();
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      showToast('Notes-only JSON backup exported successfully!', 'success');
+    } catch (err) {
+      console.error('Failed to export notes JSON:', err);
+      showToast('Failed to export notes: ' + err.message, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  /**
+   * Action 3: Inspect & Validate selected ZIP backup file
+   */
+  async function handleRestoreFileSelected(file) {
+    const errorEl = document.getElementById('restoreZipError');
+    const previewBox = document.getElementById('restoreZipPreviewBox');
+    const dropzone = document.getElementById('restoreZipDropzone');
+
+    if (errorEl) {
+      errorEl.style.display = 'none';
+      errorEl.textContent = '';
+    }
+
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      showError(errorEl, 'Please select a valid ResearchMate .zip backup file.');
+      return;
+    }
+
+    try {
+      showToast('Validating backup archive...', 'info');
+      const validated = await window.ResearchMateDB.inspectAndValidateZipBackup(file);
+      stagedZipBackup = validated;
+
+      // Populate preview details
+      if (dropzone) dropzone.style.display = 'none';
+      if (previewBox) previewBox.style.display = 'block';
+
+      const fileNameEl = document.getElementById('restoreBackupFileName');
+      const metaSummaryEl = document.getElementById('restoreBackupMetaSummary');
+      const dateEl = document.getElementById('restoreBackupDate');
+      const conflictsWarning = document.getElementById('restoreConflictsWarning');
+      const conflictsList = document.getElementById('restoreConflictsList');
+
+      if (fileNameEl) fileNameEl.textContent = file.name;
+      if (metaSummaryEl) {
+        metaSummaryEl.textContent = `${validated.papers.length} Papers • ${validated.notes.length} Review Notes • ${validated.pdfCount} Original PDF Documents`;
+      }
+      if (dateEl) {
+        const d = new Date(validated.backupInfo.createdAt);
+        dateEl.textContent = `Backup Date: ${d.toLocaleString()}`;
+      }
+
+      // Show conflict details if any
+      if (conflictsWarning && conflictsList) {
+        if (validated.conflicts && validated.conflicts.length > 0) {
+          conflictsWarning.style.display = 'block';
+          conflictsList.innerHTML = validated.conflicts.map(c => `
+            <div class="conflict-item">
+              <strong>ID:</strong> ${c.id} — <em>"${escapeHtml(c.backupTitle)}"</em>
+            </div>
+          `).join('');
+        } else {
+          conflictsWarning.style.display = 'none';
+          conflictsList.innerHTML = '';
+        }
+      }
+
+      showToast('Backup archive validated successfully.', 'success');
+    } catch (err) {
+      console.error('Backup validation error:', err);
+      showError(errorEl, err.message || 'Validation failed. The ZIP file is not a valid ResearchMate backup.');
+      clearStagedBackup();
+    }
+  }
+
+  function clearStagedBackup() {
+    stagedZipBackup = null;
+    const restoreInput = document.getElementById('restoreZipFileInput');
+    if (restoreInput) restoreInput.value = '';
+
+    const dropzone = document.getElementById('restoreZipDropzone');
+    const previewBox = document.getElementById('restoreZipPreviewBox');
+    const errorEl = document.getElementById('restoreZipError');
+
+    if (dropzone) dropzone.style.display = 'flex';
+    if (previewBox) previewBox.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
+  }
+
+  /**
+   * Triggers the restore execution with user mode selection.
+   */
+  async function handleExecuteRestore() {
+    if (!stagedZipBackup) {
+      showToast('Please select a valid backup ZIP first.', 'error');
+      return;
+    }
+
+    const modeInput = document.querySelector('input[name="restoreMode"]:checked');
+    const mode = modeInput ? modeInput.value : 'merge';
+
+    if (mode === 'replace') {
+      // Require explicit confirmation modal for destructive replace
+      const modal = document.getElementById('replaceConfirmModal');
+      const summaryEl = document.getElementById('replaceModalSummary');
+      if (summaryEl) {
+        summaryEl.textContent = `Your current library will be erased and replaced with ${stagedZipBackup.papers.length} papers, ${stagedZipBackup.notes.length} literature review notes, and ${stagedZipBackup.pdfCount} original PDFs.`;
+      }
+      if (modal) {
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+    } else {
+      // Merge mode proceeds immediately
+      await performRestoreExecution('merge');
+    }
+  }
+
+  /**
+   * Executes database restore transaction and updates UI.
+   */
+  async function performRestoreExecution(mode) {
+    if (!stagedZipBackup) return;
+
+    const executeBtn = document.getElementById('executeRestoreBtn');
+    const progressEl = document.getElementById('restoreProgressStatus');
+    const origHtml = executeBtn ? executeBtn.innerHTML : '';
+
+    try {
+      if (executeBtn) {
+        executeBtn.disabled = true;
+        executeBtn.textContent = 'Restoring Library...';
+      }
+      if (progressEl) {
+        progressEl.style.display = 'block';
+        progressEl.textContent = 'Restoring database records...';
+      }
+
+      const result = await window.ResearchMateDB.restoreZipBackup(
+        stagedZipBackup,
+        mode,
+        {},
+        (pct, msg) => {
+          if (progressEl) progressEl.textContent = msg;
+        }
+      );
+
+      clearStagedBackup();
+
+      showToast(`Restore complete! ${result.restoredPapers} papers, ${result.restoredNotes} notes, and ${result.restoredPdfs} PDFs imported.`, 'success', 5000);
+
+      // Refresh application data
+      await window.PapersManager.loadPapers();
+      await updateDashboard();
+      await updateDataManagementStats();
+
+      // Navigate to My Papers
+      setTimeout(() => {
+        navigateTo('papers');
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to restore backup:', err);
+      showToast('Restore failed: ' + err.message, 'error', 6000);
+      if (progressEl) {
+        progressEl.textContent = 'Error: ' + err.message;
+      }
+    } finally {
+      if (executeBtn) {
+        executeBtn.disabled = false;
+        executeBtn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  function showError(el, message) {
+    if (!el) return;
+    el.textContent = message;
+    el.style.display = 'block';
+  }
+
+  function closeAllModals() {
+    document.querySelectorAll('.modal-overlay').forEach(modal => {
+      modal.classList.remove('active');
+      modal.setAttribute('aria-hidden', 'true');
+    });
+  }
+
   /**
    * Displays an accessible, non-intrusive toast alert.
-   * @param {string} message
-   * @param {'info'|'success'|'error'} type
-   * @param {number} durationMs
    */
   function showToast(message, type = 'info', durationMs = 3500) {
     const toastContainer = document.getElementById('toastContainer');
@@ -200,6 +566,7 @@
   window.App = {
     navigateTo,
     updateDashboard,
+    updateDataManagementStats,
     showToast,
     getCurrentView: () => currentView
   };
@@ -211,4 +578,3 @@
     init();
   }
 })();
-

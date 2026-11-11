@@ -200,12 +200,20 @@
       }
     }
 
-    if (createdEl) {
-      try {
-        const d = new Date(paper.createdAt);
-        createdEl.textContent = `Added ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-      } catch {
-        createdEl.textContent = '';
+    // Render Original PDF action button if paper has an uploaded PDF
+    const pdfWrap = document.getElementById('notesPaperPdfWrap');
+    const pdfBtn = document.getElementById('notesViewOriginalPdfBtn');
+    if (pdfWrap && pdfBtn) {
+      if (paper.hasPdf) {
+        pdfWrap.style.display = 'inline-flex';
+        const sizeStr = paper.pdfFileSize ? ` (${formatBytes(paper.pdfFileSize)})` : '';
+        pdfBtn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          View Original PDF${sizeStr} ↗
+        `;
+        pdfBtn.onclick = () => window.PapersManager.viewOriginalPdf(paper.id, pdfBtn);
+      } else {
+        pdfWrap.style.display = 'none';
       }
     }
   }
@@ -362,6 +370,14 @@
         saveBtn.classList.add('btn-secondary');
       }
     }
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   function formatTime(isoString) {

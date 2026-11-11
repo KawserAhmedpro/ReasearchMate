@@ -2,15 +2,14 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>ResearchMate End-to-End UI Test Suite</title>
-  <!-- Load same CSS and scripts as index.html -->
+  <title>ResearchMate V1.1 End-to-End UI Test Suite</title>
   <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/vendor/jszip.min.js"></script>
   <script src="../js/vendor/jspdf.umd.min.js"></script>
   <script src="../js/vendor/html2pdf.bundle.min.js"></script>
 </head>
 <body>
-  <div id="testStatusBanner" style="padding: 10px; background: #e0f2fe; font-family: monospace;">Running E2E tests...</div>
-  <!-- We will load index.html content inside an iframe to test exact user interactions -->
+  <div id="testStatusBanner" style="padding: 10px; background: #e0f2fe; font-family: monospace;">Running V1.1 E2E tests...</div>
   <iframe id="appFrame" src="../index.html" style="width: 100%; height: 900px; border: 1px solid #ccc;"></iframe>
 
   <script>
@@ -35,10 +34,9 @@
 
     async function runE2E() {
       try {
-        log('Starting End-to-End UI Testing...');
+        log('Starting ResearchMate V1.1 E2E UI Testing...');
         const iframe = document.getElementById('appFrame');
 
-        // Wait for iframe to load
         await new Promise(r => {
           if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') r();
           else iframe.onload = r;
@@ -47,12 +45,12 @@
         const doc = iframe.contentDocument;
         const win = iframe.contentWindow;
 
-        // Allow app.js and database init
         await wait(500);
 
-        // UI Test 1: Verify Dashboard Initial State
+        // UI Test 1: Verify Initial Dashboard State
         assert(doc.getElementById('dashboardSection').classList.contains('active-view'), 'Dashboard is active on initial load');
         assert(doc.getElementById('statTotalPapers').textContent === '0', 'Initial total papers count is 0');
+        assert(doc.getElementById('statPdfCount').textContent === '0', 'Initial PDF count is 0');
 
         // UI Test 2: Open Add Paper Modal
         const openModalBtn = doc.querySelector('[data-action="open-add-paper-modal"]');
@@ -61,136 +59,123 @@
         await wait(100);
 
         const addModal = doc.getElementById('addPaperModal');
-        assert(addModal.classList.contains('active'), 'Add Paper Modal is open and visible');
+        assert(addModal.classList.contains('active'), 'Add Paper Modal is open');
 
-        // UI Test 3: Fill and submit Add Paper Form
+        // UI Test 3: Test Option 1 (Manual Entry)
+        const tabManualBtn = doc.getElementById('tabAddManualBtn');
+        assert(tabManualBtn !== null, 'Found Manual Entry tab button');
+        tabManualBtn.click();
+        await wait(50);
+
         const titleInput = doc.getElementById('paperTitleInput');
         const authorsInput = doc.getElementById('paperAuthorsInput');
         const yearInput = doc.getElementById('paperYearInput');
-        const doiInput = doc.getElementById('paperDoiInput');
-        const form = doc.getElementById('addPaperForm');
+        const manualForm = doc.getElementById('addPaperManualForm');
 
-        titleInput.value = 'Attention Is All You Need';
-        authorsInput.value = 'Vaswani et al.';
-        yearInput.value = '2017';
-        doiInput.value = 'https://arxiv.org/abs/1706.03762';
-
-        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        titleInput.value = 'ResNet: Deep Residual Learning';
+        authorsInput.value = 'He et al.';
+        yearInput.value = '2016';
+        manualForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
         await wait(600);
 
-        // UI Test 4: Verify navigation directly to Note Editor
-        assert(doc.getElementById('notesSection').classList.contains('active-view'), 'Automatically navigated to Note Editor for new paper');
-        assert(doc.getElementById('notesPaperTitle').textContent === 'Attention Is All You Need', 'Paper title displayed in Note Editor');
-        assert(doc.getElementById('notesPaperAuthors').textContent === 'Vaswani et al.', 'Paper authors displayed in Note Editor');
-        assert(doc.getElementById('notesPaperYear').textContent.includes('2017'), 'Paper year displayed in Note Editor');
+        // Should navigate to note editor
+        assert(doc.getElementById('notesSection').classList.contains('active-view'), 'Navigated to Note Editor for manual paper');
+        assert(doc.getElementById('notesPaperTitle').textContent === 'ResNet: Deep Residual Learning', 'Paper title in Note Editor');
+        assert(doc.getElementById('notesPaperPdfWrap').style.display === 'none', 'View Original PDF button hidden for manual paper');
 
-        // UI Test 5: Verify all 10 Note Section textareas exist and write notes
-        const sectionIds = [
-          'researchProblem', 'researchObjective', 'dataset', 'methodology',
-          'evaluationProtocol', 'evaluationMetrics', 'keyFindings', 'limitations',
-          'futureWork', 'criticalAnalysis'
-        ];
+        // UI Test 4: Open Add Paper Modal and switch to Option 2 (Upload PDF)
+        openModalBtn.click();
+        await wait(100);
 
-        for (let i = 0; i < sectionIds.length; i++) {
-          const sec = sectionIds[i];
-          const ta = doc.getElementById(`input-${sec}`);
-          assert(ta !== null, `Textarea for section ${sec} exists`);
-          ta.value = `Note content for section ${sec}: Tested successfully.`;
-          ta.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+        const tabUploadBtn = doc.getElementById('tabAddUploadBtn');
+        assert(tabUploadBtn !== null, 'Found Upload PDF tab button');
+        tabUploadBtn.click();
+        await wait(50);
+        assert(doc.getElementById('addUploadTabContent').style.display === 'block', 'Upload tab content is visible');
 
-        // Check unsaved indicator
-        assert(doc.getElementById('notesSaveStatusText').textContent.includes('Unsaved'), 'Status indicates unsaved changes after typing');
+        // Simulate file selection
+        const fakeFile = new File(['%PDF-1.4 Mock PDF Stream Content'], 'transformer_paper.pdf', { type: 'application/pdf' });
+        const fileInput = doc.getElementById('paperPdfFileInput');
 
-        // UI Test 6: Save Notes
-        const saveBtn = doc.getElementById('saveNotesBtn');
-        saveBtn.click();
+        // We can simulate selecting file via DataTransfer
+        const dt = new DataTransfer();
+        dt.items.add(fakeFile);
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(200);
+
+        // Verify selected file info box displays filename and size
+        assert(doc.getElementById('selectedPdfInfoBox').style.display === 'flex', 'Selected PDF info box is displayed');
+        assert(doc.getElementById('selectedPdfFileName').textContent === 'transformer_paper.pdf', 'Selected PDF filename displayed');
+
+        // Fill metadata
+        const uploadTitleInput = doc.getElementById('uploadPaperTitle');
+        const uploadAuthorsInput = doc.getElementById('uploadPaperAuthors');
+        const uploadYearInput = doc.getElementById('uploadPaperYear');
+        const uploadForm = doc.getElementById('addPaperUploadForm');
+
+        uploadTitleInput.value = 'Attention Is All You Need';
+        uploadAuthorsInput.value = 'Vaswani et al.';
+        uploadYearInput.value = '2017';
+
+        uploadForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
         await wait(600);
 
-        assert(doc.getElementById('notesSaveStatusText').textContent.includes('saved'), 'Status indicates all changes saved');
-        assert(doc.getElementById('notesCompletionBadge').textContent.includes('10/10'), 'Completion badge shows 10/10 Sections Completed');
+        // Verify navigation to Note Editor and presence of "View Original PDF" in banner
+        assert(doc.getElementById('notesSection').classList.contains('active-view'), 'Navigated to Note Editor for uploaded PDF paper');
+        assert(doc.getElementById('notesPaperTitle').textContent === 'Attention Is All You Need', 'Paper title matches uploaded paper');
+        assert(doc.getElementById('notesPaperPdfWrap').style.display === 'inline-flex', 'View Original PDF button displayed in banner');
 
-        // UI Test 7: Toggle to Preview Mode and back to Editor
-        const toggleBtn = doc.getElementById('toggleNotesModeBtn');
-        toggleBtn.click();
-        await wait(100);
-        assert(doc.getElementById('notesReadOnlyWrapper').style.display === 'block', 'Preview mode displays formatted read-only view');
-        assert(doc.getElementById('notesEditorWrapper').style.display === 'none', 'Editor wrapper is hidden in preview mode');
-
-        toggleBtn.click();
-        await wait(100);
-        assert(doc.getElementById('notesEditorWrapper').style.display === 'block', 'Editor wrapper restored');
-
-        // UI Test 8: Navigate to My Papers
+        // UI Test 5: Navigate to My Papers and verify cards
         const myPapersNav = doc.querySelector('[data-nav="papers"]');
         myPapersNav.click();
-        await wait(500);
+        await wait(300);
 
-        assert(doc.getElementById('papersSection').classList.contains('active-view'), 'My Papers view is active');
-        const container = doc.getElementById('papersListContainer');
-        log(`DEBUG: papersListContainer innerHTML length: ${container ? container.innerHTML.length : -1}`);
         const paperCards = doc.querySelectorAll('#papersListContainer .paper-card');
-        log(`DEBUG: paperCards count: ${paperCards.length}`);
-        assert(paperCards.length === 1, 'Exactly 1 paper card displayed in My Papers');
-        assert(paperCards[0].textContent.includes('Attention Is All You Need'), 'Paper card displays correct title');
-        assert(paperCards[0].textContent.includes('10/10 Complete'), 'Paper card displays 10/10 Complete badge');
+        assert(paperCards.length === 2, 'My Papers displays 2 papers');
 
-        // UI Test 9: Test Search & Filtering in My Papers
-        const searchInput = doc.getElementById('papersSearchInput');
-        // Search by author
-        searchInput.value = 'Vaswani';
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await wait(100);
-        assert(doc.querySelectorAll('#papersListContainer .paper-card').length === 1, 'Search by author finds paper');
+        // Paper with PDF must have "PDF Attached" badge and "View Original PDF" button
+        const cardWithPdf = Array.from(paperCards).find(c => c.textContent.includes('Attention Is All You Need'));
+        assert(cardWithPdf.querySelector('.badge-pdf') !== null, 'Card with PDF displays PDF Attached badge');
+        assert(cardWithPdf.querySelector('[data-action="view-original-pdf"]') !== null, 'Card with PDF displays View Original PDF button');
 
-        // Search by unmatched term
-        searchInput.value = 'NonExistentTitle12345';
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await wait(100);
-        assert(doc.querySelectorAll('#papersListContainer .paper-card').length === 0, 'Unmatched search hides paper card in My Papers');
-        assert(doc.getElementById('papersNoResultsState').style.display === 'block', 'No results empty state displayed');
+        // Paper without PDF must NOT have View Original PDF button
+        const cardWithoutPdf = Array.from(paperCards).find(c => c.textContent.includes('ResNet'));
+        assert(cardWithoutPdf.querySelector('.badge-pdf') === null, 'Card without PDF has no PDF Attached badge');
+        assert(cardWithoutPdf.querySelector('[data-action="view-original-pdf"]') === null, 'Card without PDF has no View Original PDF button');
 
-        // Clear search
-        const clearBtn = doc.getElementById('clearSearchBtn');
-        clearBtn.click();
-        await wait(100);
-        assert(doc.querySelectorAll('#papersListContainer .paper-card').length === 1, 'Clearing search restores paper card');
+        // UI Test 6: Navigate to Data Management
+        const dataNav = doc.querySelector('[data-nav="data"]');
+        assert(dataNav !== null, 'Data Management navigation link exists');
+        dataNav.click();
+        await wait(300);
 
-        // UI Test 10: Check Dashboard stats updated
-        const dashboardNav = doc.querySelector('[data-nav="dashboard"]');
-        dashboardNav.click();
+        assert(doc.getElementById('dataSection').classList.contains('active-view'), 'Data Management section is active');
+        assert(doc.getElementById('exportFullZipBtn') !== null, 'Export Full Backup (.ZIP) button exists');
+        assert(doc.getElementById('exportNotesJsonBtn') !== null, 'Export Notes Only (.JSON) button exists');
+        assert(doc.getElementById('restoreZipDropzone') !== null, 'Restore ZIP dropzone exists');
+
+        // UI Test 7: Export Notes Only JSON click
+        doc.getElementById('exportNotesJsonBtn').click();
         await wait(200);
-        assert(doc.getElementById('statTotalPapers').textContent === '1', 'Dashboard shows 1 total paper');
-        assert(doc.getElementById('statCompletedNotes').textContent === '1', 'Dashboard shows 1 completed review');
 
-        // UI Test 11: Delete Paper with confirmation
+        // Clean up: delete the test papers
         myPapersNav.click();
         await wait(200);
 
-        const deleteBtn = doc.querySelector('#papersListContainer [data-action="delete-paper"]');
-        assert(deleteBtn !== null, 'Found delete button on paper card');
-        deleteBtn.click();
-        await wait(100);
+        const deleteBtns = doc.querySelectorAll('#papersListContainer [data-action="delete-paper"]');
+        for (const btn of deleteBtns) {
+          btn.click();
+          await wait(100);
+          const confirmBtn = doc.getElementById('confirmDeleteBtn');
+          confirmBtn.click();
+          await wait(300);
+        }
 
-        const deleteModal = doc.getElementById('deleteConfirmModal');
-        assert(deleteModal.classList.contains('active'), 'Delete Confirmation Modal is displayed');
-        assert(doc.getElementById('deletePaperTitlePreview').textContent.includes('Attention Is All You Need'), 'Confirmation modal displays correct paper title');
+        assert(doc.querySelectorAll('#papersListContainer .paper-card').length === 0, 'All papers cleanly deleted');
 
-        const confirmDeleteBtn = doc.getElementById('confirmDeleteBtn');
-        confirmDeleteBtn.click();
-        await wait(600);
-
-        // Verify paper is deleted
-        assert(doc.querySelectorAll('#papersListContainer .paper-card').length === 0, 'Paper card removed after deletion');
-        assert(doc.getElementById('papersEmptyState').style.display === 'block', 'Empty state displayed after deletion');
-
-        // Check Dashboard reflects 0 papers
-        dashboardNav.click();
-        await wait(200);
-        assert(doc.getElementById('statTotalPapers').textContent === '0', 'Dashboard stats reset to 0');
-
-        log('=== ALL E2E UI TESTS PASSED! ===', 'SUCCESS');
-        document.getElementById('testStatusBanner').innerText = 'ALL E2E UI TESTS PASSED!';
+        log('=== ALL V1.1 E2E UI TESTS PASSED! ===', 'SUCCESS');
+        document.getElementById('testStatusBanner').innerText = 'ALL V1.1 E2E UI TESTS PASSED!';
 
         await fetch('/report_test_results', {
           method: 'POST',

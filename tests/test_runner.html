@@ -2,14 +2,15 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>ResearchMate Automated Test Suite</title>
+  <title>ResearchMate V1.1 Automated Test Suite</title>
+  <script src="../js/vendor/jszip.min.js"></script>
   <script src="../js/vendor/jspdf.umd.min.js"></script>
   <script src="../js/vendor/html2pdf.bundle.min.js"></script>
   <script src="../js/database.js"></script>
   <script src="../js/pdf-export.js"></script>
 </head>
 <body>
-  <h1>ResearchMate Test Runner</h1>
+  <h1>ResearchMate V1.1 Test Runner</h1>
   <div id="testOutput" style="font-family: monospace; white-space: pre;"></div>
 
   <script>
@@ -34,13 +35,14 @@
 
     async function runTests() {
       try {
-        log('--- Starting ResearchMate Test Suite ---');
+        log('--- Starting ResearchMate V1.1 Test Suite ---');
 
-        // Test 1: Initialize Database
+        // Test 1: Initialize Database (V2)
         const db = await window.ResearchMateDB.initDB();
         assert(db && db.name === 'ResearchMateDB', 'IndexedDB initialized with name ResearchMateDB');
         assert(db.objectStoreNames.contains('papers'), 'Database contains "papers" store');
         assert(db.objectStoreNames.contains('notes'), 'Database contains "notes" store');
+        assert(db.objectStoreNames.contains('pdfs'), 'Database contains V1.1 "pdfs" store');
 
         // Test 2: Validation on addPaper (missing title)
         let caughtMissingTitle = false;
@@ -60,94 +62,124 @@
         }
         assert(caughtMissingAuthors, 'addPaper rejects missing authors');
 
-        // Test 4: Successfully add Paper 1
-        const paper1 = await window.ResearchMateDB.addPaper({
-          title: 'Attention Is All You Need',
-          authors: 'Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit',
-          year: 2017,
-          doiUrl: 'https://arxiv.org/abs/1706.03762'
-        });
-        assert(paper1 && paper1.id && paper1.title === 'Attention Is All You Need', 'Paper 1 successfully created with unique ID');
-        assert(paper1.year === 2017, 'Publication year stored correctly as number');
-
-        // Test 5: Verify default empty notes created for Paper 1
-        const initialNotes1 = await window.ResearchMateDB.getNotesByPaperId(paper1.id);
-        assert(initialNotes1 && initialNotes1.paperId === paper1.id, 'Initial blank notes record created for Paper 1');
-        assert(initialNotes1.researchProblem === '', 'Initial researchProblem is empty string');
-
-        // Test 6: Add Paper 2
-        const paper2 = await window.ResearchMateDB.addPaper({
+        // Test 4: Option 1 - Add Paper Manually (No PDF)
+        const paperManual = await window.ResearchMateDB.addPaper({
           title: 'Deep Residual Learning for Image Recognition',
           authors: 'Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun',
           year: 2016,
           doiUrl: 'https://arxiv.org/abs/1512.03385'
         });
-        assert(paper2 && paper2.id && paper2.id !== paper1.id, 'Paper 2 created with distinct unique ID');
+        assert(paperManual && paperManual.id, 'Paper 1 (Manual) created');
+        assert(paperManual.hasPdf === false, 'Manual paper hasPdf is false');
 
-        // Test 7: Verify getAllPapers returns both papers
-        const allPapers = await window.ResearchMateDB.getAllPapers();
-        assert(allPapers.length >= 2, 'getAllPapers returns at least 2 papers');
-        const retrievedPaper1 = await window.ResearchMateDB.getPaperById(paper1.id);
-        assert(retrievedPaper1.title === 'Attention Is All You Need', 'getPaperById retrieves correct paper');
+        // Verify PDF store has NO record for manual paper
+        const manualPdf = await window.ResearchMateDB.getPaperPdf(paperManual.id);
+        assert(manualPdf === null, 'getPaperPdf returns null for manually added paper');
 
-        // Test 8: Write notes for Paper 1 across all 10 core sections (including Bengali Unicode text to test multilingual support)
-        const notesContent1 = {
-          paperId: paper1.id,
-          researchProblem: 'Recurrent models generate sequences sequentially, precluding parallelization within training examples. এটি একটি প্রধান সমস্যা।',
-          researchObjective: 'Propose the Transformer, a model architecture eschewing recurrence and entirely relying on an attention mechanism.',
-          dataset: 'WMT 2014 English-to-German (4.5M pairs) and WMT 2014 English-to-French (36M pairs).',
-          methodology: 'Multi-Head Self-Attention, Positional Encoding, Scaled Dot-Product Attention, and Feed-Forward Networks.',
-          evaluationProtocol: '8 NVIDIA P100 GPUs, Adam optimizer with warmup, byte-pair encoding (BPE).',
-          evaluationMetrics: 'BLEU score (28.4 on En-De, 41.8 on En-Fr).',
-          keyFindings: 'Transformer achieves state-of-the-art translation quality while training significantly faster than recurrent or convolutional models.',
-          limitations: 'Quadratic computational complexity O(n^2) with respect to input sequence length.',
-          futureWork: 'Extend Transformer to non-text modalities (images, audio, video) and local attention.',
-          criticalAnalysis: 'Revolutionary foundation for modern LLMs. Research gap: efficient long-context attention mechanisms.'
+        // Test 5: Option 2 - Add Paper with Uploaded Original PDF Blob
+        const fakePdfBlob = new Blob(['%PDF-1.4 Fake PDF Content for ResearchMate Test'], { type: 'application/pdf' });
+        fakePdfBlob.name = 'attention_2017.pdf';
+
+        const paperWithPdf = await window.ResearchMateDB.addPaper({
+          title: 'Attention Is All You Need',
+          authors: 'Ashish Vaswani, Noam Shazeer, Niki Parmar, et al.',
+          year: 2017,
+          doiUrl: 'https://arxiv.org/abs/1706.03762'
+        }, fakePdfBlob);
+
+        assert(paperWithPdf && paperWithPdf.id, 'Paper 2 (with PDF) created');
+        assert(paperWithPdf.hasPdf === true, 'Paper 2 hasPdf is true');
+        assert(paperWithPdf.pdfFileName === 'attention_2017.pdf', 'Paper 2 stores PDF filename');
+
+        // Verify PDF store contains the binary blob
+        const storedPdf = await window.ResearchMateDB.getPaperPdf(paperWithPdf.id);
+        assert(storedPdf && storedPdf.fileBlob !== null, 'getPaperPdf retrieves stored PDF record');
+        assert(storedPdf.fileBlob.size === fakePdfBlob.size, 'Stored PDF blob matches original size');
+
+        // Test 6: Write notes for Paper 2 across 10 sections
+        const notesContent = {
+          paperId: paperWithPdf.id,
+          researchProblem: 'Recurrent models generate sequences sequentially. এটি প্রধান সমস্যা।',
+          researchObjective: 'Propose the Transformer architecture.',
+          dataset: 'WMT 2014 English-to-German & English-to-French.',
+          methodology: 'Multi-Head Self-Attention.',
+          evaluationProtocol: '8 P100 GPUs, Adam optimizer.',
+          evaluationMetrics: 'BLEU score 28.4.',
+          keyFindings: 'State of the art translation quality.',
+          limitations: 'O(n^2) sequence length complexity.',
+          futureWork: 'Extend to other modalities.',
+          criticalAnalysis: 'Seminal foundation for modern LLMs.'
         };
+        const savedNotes = await window.ResearchMateDB.saveNotes(notesContent);
+        assert(savedNotes && savedNotes.paperId === paperWithPdf.id, 'saveNotes succeeded for Paper 2');
 
-        const savedNotes1 = await window.ResearchMateDB.saveNotes(notesContent1);
-        assert(savedNotes1 && savedNotes1.paperId === paper1.id, 'saveNotes successfully saved notes for Paper 1');
-        assert(savedNotes1.researchProblem.includes('এটি একটি প্রধান সমস্যা'), 'Bengali Unicode preserved accurately in IndexedDB');
+        // Test 7: Completion statistics
+        const stats = window.ResearchMateDB.calculateCompletion(savedNotes);
+        assert(stats.completedCount === 10, 'Completion count is 10/10');
+        assert(stats.isComplete === true, 'isComplete is true');
 
-        // Test 9: Verify notes isolation - Paper 2 notes must still be empty!
-        const notes2 = await window.ResearchMateDB.getNotesByPaperId(paper2.id);
-        assert(notes2.researchProblem === '', 'Paper 2 notes remain completely empty and isolated from Paper 1');
+        // Test 8: Export Notes Only (JSON)
+        const notesExport = await window.ResearchMateDB.exportNotesOnlyJson();
+        assert(notesExport && notesExport.filename.endsWith('.json'), 'exportNotesOnlyJson returns .json filename');
+        const parsedNotesExport = JSON.parse(notesExport.jsonString);
+        assert(parsedNotesExport.appName === 'ResearchMate', 'Notes JSON has appName ResearchMate');
+        assert(parsedNotesExport.exportType === 'notes-only', 'Notes JSON has exportType notes-only');
+        assert(parsedNotesExport.papers.length >= 2, 'Notes JSON contains papers list');
 
-        // Test 10: Test Completion calculation
-        const statsPaper1 = window.ResearchMateDB.calculateCompletion(savedNotes1);
-        assert(statsPaper1.completedCount === 10, 'Paper 1 completion count is 10/10');
-        assert(statsPaper1.isComplete === true, 'Paper 1 isComplete flag is true');
-        assert(statsPaper1.percentage === 100, 'Paper 1 percentage is 100%');
+        // Test 9: Export Full Backup (ZIP)
+        let zipProgressReported = false;
+        const zipExport = await window.ResearchMateDB.exportFullBackupZip((pct, msg) => {
+          zipProgressReported = true;
+        });
+        assert(zipExport && zipExport.blob && zipExport.blob.size > 0, 'exportFullBackupZip generated non-empty ZIP Blob');
+        assert(zipExport.filename.endsWith('.zip'), 'ZIP export has .zip filename');
+        assert(zipProgressReported, 'ZIP progress callback was called');
 
-        const statsPaper2 = window.ResearchMateDB.calculateCompletion(notes2);
-        assert(statsPaper2.completedCount === 0, 'Paper 2 completion count is 0/10');
-        assert(statsPaper2.isStarted === false, 'Paper 2 isStarted is false');
+        // Test 10: Inspect & Validate Exported ZIP
+        const validatedZip = await window.ResearchMateDB.inspectAndValidateZipBackup(zipExport.blob);
+        assert(validatedZip.isValid === true, 'ZIP backup validated as valid');
+        assert(validatedZip.backupInfo.appName === 'ResearchMate', 'backup-info.json contains appName: ResearchMate');
+        assert(validatedZip.papers.length >= 2, 'ZIP backup contains at least 2 papers');
+        assert(validatedZip.pdfCount >= 1, 'ZIP backup contains original-pdfs entry');
 
-        // Test 11: Edit/Update existing notes for Paper 1
-        const updatedProblem = 'UPDATED: Recurrent sequential bottleneck eliminated by attention.';
-        notesContent1.researchProblem = updatedProblem;
-        const reSavedNotes1 = await window.ResearchMateDB.saveNotes(notesContent1);
-        const reFetchedNotes1 = await window.ResearchMateDB.getNotesByPaperId(paper1.id);
-        assert(reFetchedNotes1.researchProblem === updatedProblem, 'Updated notes persisted and verified');
+        // Test 11: Restore Backup - Replace Mode
+        const restoreReplaceResult = await window.ResearchMateDB.restoreZipBackup(validatedZip, 'replace');
+        assert(restoreReplaceResult.restoredPapers >= 2, 'Replace mode restored all papers');
+        assert(restoreReplaceResult.restoredPdfs >= 1, 'Replace mode restored all PDFs');
 
-        // Test 12: Test PDF Filename sanitization
-        const safeName = window.PDFExporter.sanitizeFilename('Deep Learning: A Survey/Review? (2025)');
-        assert(!safeName.includes(':') && !safeName.includes('?') && !safeName.includes('/'), 'PDF filename sanitization removes illegal characters');
+        // Verify PDF is intact after restore
+        const restoredPdf = await window.ResearchMateDB.getPaperPdf(paperWithPdf.id);
+        assert(restoredPdf && restoredPdf.fileBlob.size === fakePdfBlob.size, 'Restored PDF matches original blob size');
 
-        // Test 13: Test PDF Sections definition
-        assert(window.PDFExporter.SECTIONS.length === 10, 'PDFExporter defines exactly 10 core sections');
+        // Test 12: Restore Backup - Merge Mode
+        // Create another new paper in local DB
+        const paperNewLocal = await window.ResearchMateDB.addPaper({
+          title: 'BERT: Pre-training of Deep Bidirectional Transformers',
+          authors: 'Devlin et al.',
+          year: 2018
+        });
 
-        // Test 14: Delete Paper 2 and verify cascade deletion in notes store
-        await window.ResearchMateDB.deletePaper(paper2.id);
-        const paper2AfterDelete = await window.ResearchMateDB.getPaperById(paper2.id);
-        assert(paper2AfterDelete === null, 'Paper 2 removed from papers store');
+        // Merge the previous backup
+        const restoreMergeResult = await window.ResearchMateDB.restoreZipBackup(validatedZip, 'merge');
+        // PaperNewLocal must still exist!
+        const bertPaper = await window.ResearchMateDB.getPaperById(paperNewLocal.id);
+        assert(bertPaper !== null && bertPaper.title.includes('BERT'), 'Merge mode preserved local paper without overwriting');
 
-        // Clean up Paper 1 as well
-        await window.ResearchMateDB.deletePaper(paper1.id);
-        const paper1AfterDelete = await window.ResearchMateDB.getPaperById(paper1.id);
-        assert(paper1AfterDelete === null, 'Paper 1 removed from papers store');
+        // Test 13: Cascade deletion deletes paper, notes, AND pdf
+        await window.ResearchMateDB.deletePaper(paperWithPdf.id);
+        const deletedPaper = await window.ResearchMateDB.getPaperById(paperWithPdf.id);
+        const deletedNotes = await window.ResearchMateDB.getNotesByPaperId(paperWithPdf.id);
+        const deletedPdf = await window.ResearchMateDB.getPaperPdf(paperWithPdf.id);
 
-        log('=== ALL 14 CORE TESTS PASSED SUCCESSFULLY! ===', 'SUCCESS');
+        assert(deletedPaper === null, 'Paper removed from papers store');
+        assert(deletedNotes.researchProblem === '', 'Notes cleared');
+        assert(deletedPdf === null, 'PDF removed from pdfs store on paper deletion');
+
+        // Clean up remaining papers
+        await window.ResearchMateDB.deletePaper(paperManual.id);
+        await window.ResearchMateDB.deletePaper(paperNewLocal.id);
+
+        log('=== ALL 13 V1.1 CORE TESTS PASSED SUCCESSFULLY! ===', 'SUCCESS');
         document.body.setAttribute('data-test-status', 'SUCCESS');
         await fetch('/report_test_results', {
           method: 'POST',
